@@ -20,22 +20,33 @@ $navSections = [
         ['stock-out', 'pages/stock-out.php', 'Outbound', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V9"></path><polyline points="8 13 12 9 16 13"></polyline><path d="M4 3h16"></path></svg>'],
         ['transfers', 'pages/transfers.php', 'Transfers', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>'],
         ['history', 'pages/history.php', 'Movement History', '<svg viewBox="0 0 24 24"><path fill-rule="evenodd" d="M5.07868 5.06891C8.87402 1.27893 15.0437 1.31923 18.8622 5.13778C22.6824 8.95797 22.7211 15.1313 18.9262 18.9262C15.1312 22.7211 8.95793 22.6824 5.13774 18.8622C2.87389 16.5984 1.93904 13.5099 2.34047 10.5812C2.39672 10.1708 2.775 9.88377 3.18537 9.94002C3.59575 9.99627 3.88282 10.3745 3.82658 10.7849C3.4866 13.2652 4.27782 15.881 6.1984 17.8016C9.44288 21.0461 14.6664 21.0646 17.8655 17.8655C21.0646 14.6664 21.046 9.44292 17.8015 6.19844C14.5587 2.95561 9.33889 2.93539 6.13935 6.12957L6.88705 6.13333C7.30126 6.13541 7.63535 6.47288 7.63327 6.88709C7.63119 7.3013 7.29372 7.63539 6.87951 7.63331L4.33396 7.62052C3.92269 7.61845 3.58981 7.28556 3.58774 6.8743L3.57495 4.32874C3.57286 3.91454 3.90696 3.57707 4.32117 3.57498C4.73538 3.5729 5.07285 3.907 5.07493 4.32121L5.07868 5.06891ZM11.9999 7.24992C12.4141 7.24992 12.7499 7.58571 12.7499 7.99992V11.6893L15.0302 13.9696C15.3231 14.2625 15.3231 14.7374 15.0302 15.0302C14.7373 15.3231 14.2624 15.3231 13.9696 15.0302L11.2499 12.3106V7.99992C11.2499 7.58571 11.5857 7.24992 11.9999 7.24992Z" fill="currentColor"/></svg>'],
-        ['adjustments', 'pages/adjustments.php', 'Adjustments', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>'],
     ],
 ];
+
+if (current_role() === 'super admin') {
+    $navSections['Administration'] = [
+        ['users', 'pages/adjustments.php', 'Users', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>'],
+    ];
+}
 ?>
 <aside class="sidebar">
 
     <?php foreach ($navSections as $label => $navItems): ?>
+        <?php $isOpen = in_array($activeNav, array_column($navItems, 0), true); ?>
 
-        <div class="sidebar-section-label"><?php echo $label; ?></div>
+        <button type="button" class="nav-group-toggle <?php echo $isOpen ? 'open' : ''; ?>" data-group="<?php echo strtolower(str_replace(' ', '-', $label)); ?>" onclick="toggleNavGroup(this)" aria-expanded="<?php echo $isOpen ? 'true' : 'false'; ?>">
+            <span><?php echo $label; ?></span>
+            <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        </button>
 
-        <?php foreach ($navItems as [$key, $href, $text, $icon]): ?>
-            <a href="<?php echo BASE_URL . '/' . $href; ?>" class="nav-item <?php echo $activeNav === $key ? 'active' : ''; ?>">
-                <div class="nav-icon"><?php echo $icon; ?></div>
-                <span><?php echo $text; ?></span>
-            </a>
-        <?php endforeach; ?>
+        <div class="nav-group <?php echo $isOpen ? 'open' : ''; ?>">
+            <?php foreach ($navItems as [$key, $href, $text, $icon]): ?>
+                <a href="<?php echo BASE_URL . '/' . $href; ?>" class="nav-item <?php echo $activeNav === $key ? 'active' : ''; ?>">
+                    <div class="nav-icon"><?php echo $icon; ?></div>
+                    <span><?php echo $text; ?></span>
+                </a>
+            <?php endforeach; ?>
+        </div>
 
     <?php endforeach; ?>
 

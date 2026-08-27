@@ -91,14 +91,18 @@ $deleteIcon  = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/20
                             <td class="no-col"><?php echo $i + 1; ?></td>
                             <td>
                                 <div class="row-actions">
+                                    <?php if (user_can('master.manage')): ?>
                                     <form method="POST" action="<?php echo BASE_URL; ?>/actions/restore-brand.php" style="display:inline;">
                                         <input type="hidden" name="id" value="<?php echo (int)$b['id']; ?>">
                                         <button type="submit" class="btn icon-btn restore" title="Restore"><?php echo $restoreIcon; ?></button>
                                     </form>
+                                    <?php endif; ?>
+                                    <?php if (user_can('permanent_delete')): ?>
                                     <form method="POST" action="<?php echo BASE_URL; ?>/actions/delete-brand-permanent.php" style="display:inline;">
                                         <input type="hidden" name="id" value="<?php echo (int)$b['id']; ?>">
                                         <button type="submit" class="btn icon-btn delete" title="Permanently Delete" onclick="return confirm('Permanently delete this brand? This cannot be undone.')"><?php echo $deleteIcon; ?></button>
                                     </form>
+                                    <?php endif; ?>
                                 </div>
                             </td>
                             <td><?php echo e($b['name']); ?></td>
@@ -149,14 +153,18 @@ $deleteIcon  = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/20
                             <td class="no-col"><?php echo $i + 1; ?></td>
                             <td>
                                 <div class="row-actions">
+                                    <?php if (user_can('master.manage')): ?>
                                     <form method="POST" action="<?php echo BASE_URL; ?>/actions/restore-master-item.php" style="display:inline;">
                                         <input type="hidden" name="id" value="<?php echo (int)$it['id']; ?>">
                                         <button type="submit" class="btn icon-btn restore" title="Restore"><?php echo $restoreIcon; ?></button>
                                     </form>
+                                    <?php endif; ?>
+                                    <?php if (user_can('permanent_delete')): ?>
                                     <form method="POST" action="<?php echo BASE_URL; ?>/actions/delete-master-item-permanent.php" style="display:inline;">
                                         <input type="hidden" name="id" value="<?php echo (int)$it['id']; ?>">
                                         <button type="submit" class="btn icon-btn delete" title="Permanently Delete" onclick="return confirm('Permanently delete this master item? This cannot be undone.')"><?php echo $deleteIcon; ?></button>
                                     </form>
+                                    <?php endif; ?>
                                 </div>
                             </td>
                             <td><?php echo e($it['product_code']); ?></td>

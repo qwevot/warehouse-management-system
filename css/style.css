@@ -1,6 +1,5 @@
 /* ============================================================
-   INVENTORY SYSTEM - GEEKSFORGEEKS-STYLE THEME (BLUE)
-   Flat, card-based, blue accent in place of GFG green.
+   WAREHOUSE MANAGEMENT SYSTEM
 ============================================================ */
 
 :root {
@@ -165,7 +164,15 @@ body.sidebar-collapsed .main {
     box-shadow: 0 4px 10px rgba(37, 99, 235, 0.35);
 }
 
-.sidebar-section-label {
+.nav-group-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    border: none;
+    background: none;
+    cursor: pointer;
+    text-align: left;
     font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
@@ -174,8 +181,25 @@ body.sidebar-collapsed .main {
     padding: 18px 11px 6px;
 }
 
-.sidebar-section-label:first-child {
+.nav-group-toggle:first-child {
     padding-top: 0;
+}
+
+.nav-group-toggle .nav-chevron {
+    flex-shrink: 0;
+    transition: transform 0.2s ease;
+}
+
+.nav-group-toggle.open .nav-chevron {
+    transform: rotate(180deg);
+}
+
+.nav-group {
+    display: none;
+}
+
+.nav-group.open {
+    display: block;
 }
 
 .nav-icon {
@@ -432,6 +456,14 @@ body.sidebar-collapsed .main {
 .split-qty-cell input:focus {
     border-color: var(--blue);
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+.split-loc-grid {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+}
+
+.split-loc-grid input {
+    text-align: left;
 }
 
 .merge-check-col {
@@ -2015,18 +2047,6 @@ button,
 .page-loader.active {
     opacity: 1;
     visibility: visible;
-}
-
-.page-loader .loader-box {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 12px;
-    padding: 24px 32px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    box-shadow: var(--shadow-hover);
 }
 
 .page-loader .spinner {

@@ -3,6 +3,7 @@
 // Only intended for items already in the bin (deleted_at is set).
 require_once __DIR__ . '/../includes/auth.php';
 require_login_api();
+require_can_api('permanent_delete');
 
 $pdo  = json_db();
 $item = find_item($pdo, (int)($_POST['id'] ?? 0));

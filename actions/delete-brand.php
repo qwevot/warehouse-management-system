@@ -3,6 +3,7 @@
 // rows never end up pointing at a missing brand.
 require_once __DIR__ . '/../includes/auth.php';
 require_login();
+require_can('master.manage');
 
 $pdo = html_db('brand');
 

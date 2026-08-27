@@ -2,6 +2,7 @@
 // PERMANENT DELETE: removes a binned brand for good.
 require_once __DIR__ . '/../includes/auth.php';
 require_login();
+require_can('permanent_delete');
 
 $pdo = html_db('master-bin');
 

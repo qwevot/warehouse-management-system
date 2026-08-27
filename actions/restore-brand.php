@@ -4,6 +4,7 @@
 // binned brand with the same name is being re-created.
 require_once __DIR__ . '/../includes/auth.php';
 require_login();
+require_can('master.manage');
 
 $pdo = html_db('master-bin');
 

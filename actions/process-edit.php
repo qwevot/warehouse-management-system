@@ -4,6 +4,7 @@
 // if a new one was captured/uploaded.
 require_once __DIR__ . '/../includes/auth.php';
 require_login();
+require_can('inventory.manage');
 
 $pdo = html_db('index');
 

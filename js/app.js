@@ -913,6 +913,37 @@
         document.body.classList.toggle("sidebar-collapsed");
     };
 
+    // Sidebar category dropdowns: toggle the group that follows the header.
+    window.toggleNavGroup = function (btn) {
+        btn.classList.toggle("open");
+        const group = btn.nextElementSibling;
+        if (group) group.classList.toggle("open");
+        try {
+            const open = [];
+            document.querySelectorAll(".nav-group-toggle[data-group]").forEach((t) => {
+                if (t.classList.contains("open")) open.push(t.dataset.group);
+            });
+            localStorage.setItem("sidebar-open-groups", JSON.stringify(open));
+        } catch (_) {}
+    };
+
+    // Restore sidebar group open/closed state from localStorage on page load.
+    (function () {
+        let saved = null;
+        try { saved = JSON.parse(localStorage.getItem("sidebar-open-groups")); } catch (_) {}
+        const activeItem = document.querySelector(".nav-item.active");
+        const activeGroup = activeItem ? activeItem.closest(".nav-group") : null;
+        const activeToggle = activeGroup ? activeGroup.previousElementSibling : null;
+        const activeKey = activeToggle ? activeToggle.dataset.group : null;
+        document.querySelectorAll(".nav-group-toggle[data-group]").forEach((btn) => {
+            const key = btn.dataset.group;
+            const group = btn.nextElementSibling;
+            const open = (saved && saved.includes(key)) || key === activeKey;
+            btn.classList.toggle("open", open);
+            if (group) group.classList.toggle("open", open);
+        });
+    })();
+
     // The Barcode & QR Code Generator page: pick an item from the inventory
     // list and generate its barcode + QR labels at the recorded location.
     let genItemId = 0;
@@ -1036,12 +1067,14 @@
     // Custom per-part quantities. The inputs are pre-filled with an equal
     // split of the selected item's stock, but the user can edit each freely.
     let splitBaseQty = 0;
+    let splitBaseLocation = "";
 
     function refreshSplitBase() {
         const checked = $all(".row-select:checked");
         const id = checked.length === 1 ? parseInt(checked[0].value, 10) : 0;
         const item = (window.INVENTORY || []).find((it) => it.id === id);
         splitBaseQty = item ? parseInt(item.quantity, 10) || 0 : 0;
+        splitBaseLocation = item ? (item.location || "") : "";
         renderSplitQtyInputs();
     }
 
@@ -1054,9 +1087,11 @@
 
     window.renderSplitQtyInputs = function () {
         const wrap = $("#splitQtyInputs");
+        const locWrap = $("#splitLocationInputs");
         if (!wrap) return;
-        const parts = Math.max(2, parseInt($("#splitParts").value, 10) || 2);
+        const parts = Math.min(10, Math.max(2, parseInt($("#splitParts").value, 10) || 2));
         wrap.innerHTML = "";
+        if (locWrap) locWrap.innerHTML = "";
         for (let i = 0; i < parts; i++) {
             const cell = document.createElement("div");
             cell.className = "split-qty-cell";
@@ -1071,6 +1106,21 @@
             cell.appendChild(label);
             cell.appendChild(input);
             wrap.appendChild(cell);
+
+            if (locWrap) {
+                const locCell = document.createElement("div");
+                locCell.className = "split-qty-cell";
+                const locLabel = document.createElement("label");
+                locLabel.textContent = "Part " + (i + 1);
+                const locInput = document.createElement("input");
+                locInput.type = "text";
+                locInput.className = "split-location";
+                locInput.placeholder = "Location";
+                if (i === 0) locInput.value = splitBaseLocation;
+                locCell.appendChild(locLabel);
+                locCell.appendChild(locInput);
+                locWrap.appendChild(locCell);
+            }
         }
         updateSplitQtySum();
     };
@@ -1089,9 +1139,12 @@
         if (quantities.some((q) => q < 1)) return alert("Each part quantity must be at least 1.");
         const sum = quantities.reduce((a, b) => a + b, 0);
         if (sum !== splitBaseQty) return alert("Part quantities must add up to the item's quantity (" + splitBaseQty + ").");
-        if (!confirm("Split this item into " + quantities.length + " parts with quantities " + quantities.join(", ") + "?")) return;
+        const locations = $all(".split-location").map((inp) => inp.value.trim());
+        if (locations.length !== quantities.length) return alert("Provide a location for every part.");
+        if (locations.some((l) => !l)) return alert("Every part must have a location.");
+        if (!confirm("Split this item into " + quantities.length + " parts?")) return;
 
-        post(BASE + "/actions/split-item.php", { item_id: checked[0], quantities: quantities })
+        post(BASE + "/actions/split-item.php", { item_id: checked[0], quantities: quantities, locations: locations })
             .then((res) => res.json())
             .then((d) => {
                 if (!d.ok) throw new Error(d.message || "Split failed.");

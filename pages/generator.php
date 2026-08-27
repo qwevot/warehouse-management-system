@@ -26,10 +26,12 @@ include __DIR__ . '/../includes/header.php';
     <div class="sticky-zone">
 
         <div class="section-header">
-            <button type="button" class="btn upload add-button" title="Import items from a CSV or Excel file" onclick="document.getElementById('importFile').click()">Import (.csv or .xlsx)</button>
-            <button type="button" class="btn warning" id="splitToggleBtn" title="Split an item into parts" onclick="toggleSplitSelection()">Split</button>
-            <button type="button" class="btn warning" id="mergeToggleBtn" title="Merge items into one" onclick="toggleMergeSelection()">Merge</button>
-            <input type="file" id="importFile" accept=".csv,.xlsx,.xls" style="display:none;">
+            <?php if (user_can('inventory.manage')): ?>
+                <button type="button" class="btn upload add-button" title="Import items from a CSV or Excel file" onclick="document.getElementById('importFile').click()">Import (.csv or .xlsx)</button>
+                <button type="button" class="btn warning" id="splitToggleBtn" title="Split an item into parts" onclick="toggleSplitSelection()">Split</button>
+                <button type="button" class="btn warning" id="mergeToggleBtn" title="Merge items into one" onclick="toggleMergeSelection()">Merge</button>
+                <input type="file" id="importFile" accept=".csv,.xlsx,.xls" style="display:none;">
+            <?php endif; ?>
         </div>
 
         <?php include __DIR__ . '/../includes/inventory-add-card.php'; ?>
@@ -48,7 +50,7 @@ include __DIR__ . '/../includes/header.php';
             <button class="btn icon-btn view" title="View" onclick="openItemModal(<?php echo (int)$item['id']; ?>)">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><circle cx="12" cy="8" r="1" fill="currentColor" stroke="none"/></svg>
             </button>
-        <?php } else { ?>
+        <?php } elseif (user_can('inventory.manage')) { ?>
             <button class="btn sm primary" title="Generate Barcode & QR Code" onclick="openGenModal(<?php echo (int)$item['id']; ?>)">Generate</button>
         <?php }
     };

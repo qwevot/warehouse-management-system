@@ -2,6 +2,7 @@
 // STOCK IN: increases the quantity of an existing item and records the movement.
 require_once __DIR__ . '/../includes/auth.php';
 require_login();
+require_can('movement.manage');
 
 $pdo    = html_db('stock-in');
 $itemId = (int)($_POST['item_id'] ?? 0);

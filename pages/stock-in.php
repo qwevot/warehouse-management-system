@@ -34,6 +34,7 @@ include __DIR__ . '/../includes/header.php';
         <div class="section-title">Receive Stock</div>
     </div>
 
+    <?php if (user_can('movement.manage')): ?>
     <form method="POST" action="<?php echo BASE_URL; ?>/actions/process-stock-in.php" class="wizard-body" id="stockForm">
 
         <div class="form-grid">
@@ -76,6 +77,9 @@ include __DIR__ . '/../includes/header.php';
         </div>
 
     </form>
+    <?php else: ?>
+        <p style="color:var(--muted);">You have view-only access. Stock movements require a technician account or higher.</p>
+    <?php endif; ?>
 
 </section>
 
@@ -89,9 +93,11 @@ include __DIR__ . '/../includes/header.php';
         <button class="btn icon-btn view" title="View" onclick="openItemModal(<?php echo (int)$item['id']; ?>)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><circle cx="12" cy="8" r="1" fill="currentColor" stroke="none"/></svg>
         </button>
+        <?php if (user_can('movement.manage')): ?>
         <button class="btn icon-btn view" title="Autofill the stock-in form with this item" onclick="pickStockItem(<?php echo (int)$item['id']; ?>)">
             <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><g id="SVGRepo_bgCarrier" stroke-width="0"></g><g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round"></g><g id="SVGRepo_iconCarrier"> <path d="M4 17V15.8C4 14.1198 4 13.2798 4.32698 12.638C4.6146 12.0735 5.07354 11.6146 5.63803 11.327C6.27976 11 7.11984 11 8.8 11H20M20 11L16 7M20 11L16 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path> </g></svg>
         </button>
+        <?php endif; ?>
     <?php };
     $emptyMessage = 'No items registered yet.';
     include __DIR__ . '/../includes/inventory-table.php';

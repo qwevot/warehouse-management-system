@@ -8,9 +8,9 @@
 
         <div class="form-grid">
 
-            <div class="field full">
+            <div class="field" style="max-width:120px;">
                 <label for="splitParts">Number of parts</label>
-                <input type="number" id="splitParts" min="2" value="2" oninput="renderSplitQtyInputs()">
+                <input type="number" id="splitParts" min="2" max="10" value="2" onkeydown="return false" oninput="renderSplitQtyInputs()">
             </div>
 
         </div>
@@ -19,6 +19,11 @@
             <label style="font-size:11px;font-weight:600;color:var(--text);display:block;margin-bottom:6px;">Part quantities</label>
             <div class="split-qty-grid" id="splitQtyInputs"></div>
             <div class="merge-hint" id="splitQtySum" style="margin-top:6px;"></div>
+        </div>
+
+        <div style="margin-top:14px;">
+            <label style="font-size:11px;font-weight:600;color:var(--text);display:block;margin-bottom:6px;">Part locations</label>
+            <div class="split-qty-grid split-loc-grid" id="splitLocationInputs"></div>
         </div>
 
         <div class="merge-actions" style="margin-top:16px;">

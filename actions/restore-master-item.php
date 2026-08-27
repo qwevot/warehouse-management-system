@@ -2,6 +2,7 @@
 // RESTORE: brings a soft-deleted master item back into the master data.
 require_once __DIR__ . '/../includes/auth.php';
 require_login();
+require_can('master.manage');
 
 $pdo = html_db('master-bin');
 

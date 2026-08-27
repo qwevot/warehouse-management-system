@@ -23,9 +23,7 @@ $initials = strtoupper(($words[0][0] ?? 'U') . ($words[1][0] ?? ''));
 <body>
 
 <div class="page-loader" id="pageLoader" aria-hidden="true">
-    <div class="loader-box">
-        <div class="spinner"></div>
-    </div>
+    <div class="spinner"></div>
 </div>
 
 <div class="app">

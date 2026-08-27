@@ -46,9 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <body class="login-body">
 
 <div class="page-loader" id="pageLoader" aria-hidden="true">
-    <div class="loader-box">
-        <div class="spinner"></div>
-    </div>
+    <div class="spinner"></div>
 </div>
 
 <div class="login-page">

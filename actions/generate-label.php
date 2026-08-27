@@ -4,6 +4,7 @@
 // location itself is set on the add-item form, not here.
 require_once __DIR__ . '/../includes/auth.php';
 require_login_api();
+require_can_api('inventory.manage');
 
 $pdo    = json_db();
 $itemId = (int)($_POST['item_id'] ?? 0);

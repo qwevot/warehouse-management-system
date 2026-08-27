@@ -2,6 +2,7 @@
 // RESTORE: brings a soft-deleted item back into the active inventory.
 require_once __DIR__ . '/../includes/auth.php';
 require_login_api();
+require_can_api('inventory.manage');
 
 $pdo  = json_db();
 $item = find_item($pdo, (int)($_POST['id'] ?? 0));

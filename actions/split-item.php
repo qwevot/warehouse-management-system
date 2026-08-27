@@ -5,6 +5,7 @@
 // QR Code Generator page).
 require_once __DIR__ . '/../includes/auth.php';
 require_login_api();
+require_can_api('inventory.manage');
 
 $pdo    = json_db();
 $itemId = (int)($_POST['item_id'] ?? 0);
@@ -21,6 +22,16 @@ if (count($quantities) < 2) {
 
 if (min($quantities) < 1) {
     json_fail('Each part quantity must be at least 1.');
+}
+
+$rawLoc = $_POST['locations'] ?? [];
+if (!is_array($rawLoc)) {
+    $rawLoc = explode('||', (string)$rawLoc);
+}
+$locations = array_values(array_filter(array_map('trim', $rawLoc)));
+
+if (count($locations) !== count($quantities)) {
+    json_fail('You must provide a location for every part.');
 }
 
 $item = find_item($pdo, $itemId);
@@ -41,7 +52,7 @@ try {
     $modifiedBy = current_user_name();
 
     // Original item keeps the first part.
-    $pdo->prepare('UPDATE inventory_list SET quantity = ?, updated_at = NOW(), modified_by = ? WHERE id = ?')->execute([$quantities[0], $modifiedBy, $item['id']]);
+    $pdo->prepare('UPDATE inventory_list SET quantity = ?, location = ?, updated_at = NOW(), modified_by = ? WHERE id = ?')->execute([$quantities[0], $locations[0], $modifiedBy, $item['id']]);
 
     // Every remaining part becomes a new item.
     for ($i = 1; $i < count($quantities); $i++) {
@@ -49,7 +60,7 @@ try {
             'name'        => $item['name'],
             'brand'       => $item['brand'],
             'quantity'    => $quantities[$i],
-            'location'    => $item['location'],
+            'location'    => $locations[$i],
             'photo'       => $item['photo'],
             'status'      => 'available',
             'modified_by' => $modifiedBy,
