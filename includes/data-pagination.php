@@ -4,6 +4,7 @@
 function buildPagination($prefix, $options = []) {
     if (!is_array($options)) $options = [];
     $ids = $options['ids'] ?? [];
+    $defaultSize = (int)($options['pageSize'] ?? 10);
     $pagerId   = $ids['pager'] ?? ($prefix . 'Pagination');
     $prevId    = $ids['prev']  ?? ($prefix . 'PagePrev');
     $nextId    = $ids['next']  ?? ($prefix . 'PageNext');
@@ -16,12 +17,9 @@ function buildPagination($prefix, $options = []) {
     <div class="page-size">
         <label for="<?= $sizeId ?>">Rows</label>
         <select id="<?= $sizeId ?>">
-            <option value="5">5</option>
-            <option value="10" selected>10</option>
-            <option value="15">15</option>
-            <option value="20">20</option>
-            <option value="25">25</option>
-            <option value="50">50</option>
+            <?php foreach ([5, 10, 15, 20, 25, 50] as $sz): ?>
+                <option value="<?= $sz ?>"<?php echo $sz === $defaultSize ? ' selected' : ''; ?>><?= $sz ?></option>
+            <?php endforeach; ?>
         </select>
     </div>
     <button type="button" class="pg-btn" id="<?= $prevId ?>" title="Previous">‹</button>

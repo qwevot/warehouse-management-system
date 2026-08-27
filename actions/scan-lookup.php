@@ -6,6 +6,13 @@ require_login_api();
 
 $code = trim($_POST['code'] ?? '');
 
+// Scanners often decode an EAN-13 barcode that begins with '0' as a 12-digit
+// UPC-A (the leading zero is implicit). Normalize it back to 13 digits so it
+// matches the stored barcode.
+if (preg_match('/^\d{12}$/', $code)) {
+    $code = '0' . $code;
+}
+
 if ($code === '') {
     json_fail('Nothing was scanned.');
 }
