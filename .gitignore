@@ -1,0 +1,3 @@
+# Uploaded item photos (user data) — never commit these.
+uploads/*
+!uploads/.htaccess
