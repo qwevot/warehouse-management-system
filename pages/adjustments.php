@@ -20,6 +20,19 @@ $roles = available_roles();
 $currentUserId = (int)(current_user()['id'] ?? 0);
 
 include __DIR__ . '/../includes/header.php';
+
+require_once __DIR__ . '/../includes/data-toolbar.php';
+require_once __DIR__ . '/../includes/data-pagination.php';
+
+$userSortOptions = [
+    ['newest',    'Newest First'],
+    ['oldest',    'Oldest First'],
+    ['username',  'Username A-Z'],
+    ['fullname',  'Full Name A-Z'],
+    ['role',      'Role'],
+];
+$userToolbar    = buildToolbar('user', $userSortOptions);
+$userPagination = buildPagination('user', ['pageSize' => 10]);
 ?>
 
 <?php include __DIR__ . '/../includes/flash.php'; ?>
@@ -33,6 +46,8 @@ include __DIR__ . '/../includes/header.php';
         </div>
     </div>
 
+    <div class="toolbar-row"><?php echo $userToolbar; ?></div>
+
     <div class="table-container">
         <table>
             <thead>
@@ -45,7 +60,7 @@ include __DIR__ . '/../includes/header.php';
                     <th>Created</th>
                 </tr>
             </thead>
-            <tbody>
+            <tbody id="userBody">
                 <?php if (empty($users)): ?>
                     <tr>
                         <td colspan="6" style="text-align:center; color:#9ca3af; padding:40px;">
@@ -54,7 +69,11 @@ include __DIR__ . '/../includes/header.php';
                     </tr>
                 <?php else: ?>
                     <?php foreach ($users as $i => $u): ?>
-                        <tr>
+                        <tr class="user-row"
+                            data-created="<?php echo strtotime($u['created_at']); ?>"
+                            data-username="<?php echo e(mb_strtolower((string)$u['username'])); ?>"
+                            data-fullname="<?php echo e(mb_strtolower((string)($u['full_name'] ?? ''))); ?>"
+                            data-role="<?php echo e(mb_strtolower((string)$u['role'])); ?>">
                             <td class="no-col"><?php echo $i + 1; ?></td>
                             <td>
                                 <div class="row-actions">
@@ -79,7 +98,66 @@ include __DIR__ . '/../includes/header.php';
         </table>
     </div>
 
+    <?php echo $userPagination; ?>
+
 </section>
+
+<script>
+    window.USERS_DATA = <?php echo json_encode(array_map(function ($u) {
+        return [
+            'username'   => $u['username'],
+            'full_name'  => $u['full_name'] ?? '',
+            'role'       => $u['role'],
+            'created_at' => $u['created_at'] ? date('Y-m-d H:i', strtotime($u['created_at'])) : '',
+        ];
+    }, $users)); ?>;
+
+    document.addEventListener("DOMContentLoaded", function () {
+        initDataTable({
+            searchInput:    '#userSearchInput',
+            sortSelect:     '#userSortSelect',
+            tbody:          '#userBody',
+            row:            '.user-row',
+            filterWrap:     '#userFilterWrap',
+            filterBtn:      '#userFilterBtn',
+            filterPanel:    '#userFilterPanel',
+            filterBadge:    '#userFilterBadge',
+            pagePrev:       '#userPagePrev',
+            pageNext:       '#userPageNext',
+            pageNumbers:    '#userPageNumbers',
+            pageRange:      '#userPageRange',
+            pagination:     '#userPagination',
+            pageSizeSelect: '#userPageSizeSelect',
+            exportFn:       'userExport',
+            exportName:     'users-list',
+            exportCols: [
+                { key: 'username',   label: 'Username' },
+                { key: 'full_name',  label: 'Full Name' },
+                { key: 'role',       label: 'Role' },
+                { key: 'created_at', label: 'Created' },
+            ],
+            filterGroups: [
+                {
+                    title: 'Role',
+                    key: 'role',
+                    dataValue: (r) => r.role,
+                    options: <?php echo json_encode(array_values(array_map(function ($r) {
+                        return ['value' => $r, 'label' => ucfirst($r)];
+                    }, $roles))); ?>,
+                },
+            ],
+            sorters: {
+                'newest':   function (a, b) { return (parseInt(b.dataset.created, 10) || 0) - (parseInt(a.dataset.created, 10) || 0); },
+                'oldest':   function (a, b) { return (parseInt(a.dataset.created, 10) || 0) - (parseInt(b.dataset.created, 10) || 0); },
+                'username': function (a, b) { return (a.dataset.username || '').localeCompare(b.dataset.username || ''); },
+                'fullname': function (a, b) { return (a.dataset.fullname || '').localeCompare(b.dataset.fullname || ''); },
+                'role':     function (a, b) { return (a.dataset.role || '').localeCompare(b.dataset.role || ''); },
+            },
+            data:     window.USERS_DATA,
+            dataText: function (r) { return r.username + ' ' + r.full_name + ' ' + r.role; },
+        });
+    });
+</script>
 
 <!-- Add user modal -->
 <div class="modal-backdrop" id="addUserModal">

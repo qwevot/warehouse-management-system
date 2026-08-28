@@ -9,7 +9,7 @@ function e($value): string
 
 function make_serial(int $id): string
 {
-    return 'INV-' . date('Y') . '-' . str_pad($id, 5, '0', STR_PAD_LEFT);
+    return 'PG-' . date('Y') . '-' . str_pad($id, 5, '0', STR_PAD_LEFT);
 }
 
 function ean13(string $digits12): string

@@ -18,6 +18,16 @@ try {
 $typeLabels = movement_type_labels();
 
 include __DIR__ . '/../includes/header.php';
+
+require_once __DIR__ . '/../includes/data-toolbar.php';
+require_once __DIR__ . '/../includes/data-pagination.php';
+
+$histSortOptions = [
+    ['newest', 'Newest First'],
+    ['oldest', 'Oldest First'],
+];
+$histToolbar    = buildToolbar('hist', $histSortOptions);
+$histPagination = buildPagination('hist', ['pageSize' => 10]);
 ?>
 
 <?php if (!empty($dbError)): ?>
@@ -29,6 +39,8 @@ include __DIR__ . '/../includes/header.php';
     <div class="section-header">
         <div class="section-title">Recent Activities</div>
     </div>
+
+    <div class="toolbar-row"><?php echo $histToolbar; ?></div>
 
     <div class="table-container">
         <table>
@@ -44,13 +56,13 @@ include __DIR__ . '/../includes/header.php';
                     <th>Date</th>
                 </tr>
             </thead>
-            <tbody>
+            <tbody id="histBody">
                 <?php if (empty($movements)): ?>
                     <tr><td colspan="8" style="text-align:center; color:#9ca3af; padding:40px;">No activity yet.</td></tr>
                 <?php else: ?>
                     <?php foreach ($movements as $i => $m): ?>
-                        <tr>
-                            <td><?php echo $i + 1; ?></td>
+                        <tr class="hist-row" data-type="<?php echo e($m['type']); ?>" data-created="<?php echo strtotime($m['created_at']); ?>">
+                            <td class="no-col"><?php echo $i + 1; ?></td>
                             <td>
                                 <span class="status <?php echo e(movement_status_class($m['type'])); ?>">
                                     <?php echo e($typeLabels[$m['type']] ?? strtoupper((string)$m['type'])); ?>
@@ -69,6 +81,70 @@ include __DIR__ . '/../includes/header.php';
         </table>
     </div>
 
+    <?php echo $histPagination; ?>
+
 </section>
+
+<script>
+    window.HIST_DATA = <?php echo json_encode(array_map(function ($m) {
+        return [
+            'type'        => $m['type'],
+            'item_name'   => $m['item_name'],
+            'quantity'    => (int)$m['quantity'],
+            'issued_to'   => $m['issued_to'] ?? '',
+            'note'        => $m['note'] ?? '',
+            'modified_by' => $m['modified_by'] ?? '',
+            'created_at'  => $m['created_at'] ? date('Y-m-d H:i', strtotime($m['created_at'])) : '',
+        ];
+    }, $movements)); ?>;
+
+    document.addEventListener("DOMContentLoaded", function () {
+        initDataTable({
+            searchInput:    '#histSearchInput',
+            sortSelect:     '#histSortSelect',
+            tbody:          '#histBody',
+            row:            '.hist-row',
+            filterWrap:     '#histFilterWrap',
+            filterBtn:      '#histFilterBtn',
+            filterPanel:    '#histFilterPanel',
+            filterBadge:    '#histFilterBadge',
+            pagePrev:       '#histPagePrev',
+            pageNext:       '#histPageNext',
+            pageNumbers:    '#histPageNumbers',
+            pageRange:      '#histPageRange',
+            pagination:     '#histPagination',
+            pageSizeSelect: '#histPageSizeSelect',
+            exportFn:       'histExport',
+            exportName:     'movement-history',
+            exportCols: [
+                { key: 'type',       label: 'Type' },
+                { key: 'item_name',  label: 'Item' },
+                { key: 'quantity',   label: 'Quantity' },
+                { key: 'issued_to',  label: 'Issued To' },
+                { key: 'note',       label: 'Details / Note' },
+                { key: 'modified_by', label: 'Modified By' },
+                { key: 'created_at', label: 'Date' },
+            ],
+            filterGroups: [
+                {
+                    title: 'Type',
+                    key: 'type',
+                    dataValue: (r) => r.type,
+                    options: [
+                        { value: 'in',       label: 'INBOUND' },
+                        { value: 'out',      label: 'OUTBOUND' },
+                        { value: 'transfer', label: 'TRANSFER' },
+                    ],
+                },
+            ],
+            sorters: {
+                'newest': function (a, b) { return (parseInt(b.dataset.created, 10) || 0) - (parseInt(a.dataset.created, 10) || 0); },
+                'oldest': function (a, b) { return (parseInt(a.dataset.created, 10) || 0) - (parseInt(b.dataset.created, 10) || 0); },
+            },
+            data:     window.HIST_DATA,
+            dataText: function (r) { return r.item_name + ' ' + r.type + ' ' + (r.note || '') + ' ' + (r.issued_to || '') + ' ' + (r.modified_by || ''); },
+        });
+    });
+</script>
 
 <?php include __DIR__ . '/../includes/footer.php'; ?>
