@@ -27,12 +27,7 @@
 
                 <div class="field">
                     <label for="brand">Brand*</label>
-                    <select id="brand" name="brand" required>
-                        <option value="">— Select brand —</option>
-                        <?php foreach (all_brands() as $b): ?>
-                            <option value="<?php echo e($b); ?>"><?php echo e($b); ?></option>
-                        <?php endforeach; ?>
-                    </select>
+                    <?php $brandSelectRequired = true; include __DIR__ . '/brand-select.php'; ?>
                 </div>
 
                 <div class="field">

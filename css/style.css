@@ -375,19 +375,15 @@ body.sidebar-collapsed .main {
 /* Add-item form: photo area spans the form width below the fields. */
 #addItemSection .photo-area {
     margin-top: 16px;
-    align-items: flex-start;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
 }
 
 #addItemSection .photo-preview-box {
     width: 150px;
     height: 150px;
-}
-
-#addItemSection .photo-area {
-    flex-direction: row;
-    align-items: center;
-    justify-content: center;
-    gap: 20px;
 }
 
 #addItemSection .photo-actions {
@@ -396,17 +392,6 @@ body.sidebar-collapsed .main {
     justify-content: center;
     gap: 10px;
     width: auto;
-}
-
-@media (max-width: 480px) {
-    #addItemSection .photo-area {
-        flex-direction: column;
-    }
-    #addItemSection .photo-actions {
-        flex-direction: row;
-        justify-content: center;
-        flex-wrap: wrap;
-    }
 }
 
 /* ============================================================
@@ -1814,10 +1799,6 @@ th.action-col {
         display: none;
     }
 
-}
-
-@media (max-width: 760px) {
-
     /* Convert the shared inventory table into stacked cards for readability
        on portrait mobile. Scoped to .inventory-table so other tables (e.g.
        "Recent Stock Out") are unaffected. */
@@ -1907,9 +1888,24 @@ th.action-col {
         gap: 4px;
     }
 
+    /* Dashboard */
+    .kpi-grid {
+        grid-template-columns: 1fr;
+    }
+
 }
 
 @media (max-width: 480px) {
+    #addItemSection .photo-area {
+        flex-direction: column;
+    }
+
+    #addItemSection .photo-actions {
+        flex-direction: row;
+        justify-content: center;
+        flex-wrap: wrap;
+    }
+
     .section-header {
         padding: 15px 14px;
     }
@@ -2135,10 +2131,4 @@ button,
     text-transform: uppercase;
     letter-spacing: 0.5px;
     margin: 16px 0 12px;
-}
-
-@media (max-width: 760px) {
-    .kpi-grid {
-        grid-template-columns: 1fr;
-    }
 }

@@ -48,7 +48,7 @@ include __DIR__ . '/../includes/header.php';
     $renderActions = function ($item) {
         if ($item['barcode']) { ?>
             <button class="btn icon-btn view" title="View" onclick="openItemModal(<?php echo (int)$item['id']; ?>)">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><circle cx="12" cy="8" r="1" fill="currentColor" stroke="none"/></svg>
+                <?php echo icon_view(); ?>
             </button>
         <?php } elseif (user_can('inventory.manage')) { ?>
             <button class="btn sm primary" title="Generate Barcode & QR Code" onclick="openGenModal(<?php echo (int)$item['id']; ?>)">Generate</button>

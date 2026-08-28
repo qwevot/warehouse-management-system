@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/icons.php';
 
 function e($value): string
 {
@@ -252,4 +253,48 @@ function create_inventory_item(PDO $pdo, array $fields, ?string $serial = null, 
         ->execute([$serial, $barcode, $qr, $id]);
 
     return ['id' => $id, 'serial' => $serial, 'barcode' => $barcode, 'qr' => $qr];
+}
+
+// Shared stock-movement helpers used by the dashboard and history views.
+
+function fetch_movements(PDO $pdo): array
+{
+    return $pdo->query(
+        "SELECT m.*, COALESCE(i.name, '') AS item_name
+         FROM stock_movements m
+         LEFT JOIN inventory_list i ON i.id = m.item_id
+         ORDER BY m.created_at DESC, m.id DESC"
+    )->fetchAll();
+}
+
+// Active inventory rows, shared by the Stock In / Stock Out / Transfers pages.
+function fetch_active_items(PDO $pdo): array
+{
+    return $pdo->query(
+        "SELECT id, name, brand, serial, quantity, location, barcode, qr, status, photo, created_at
+           FROM inventory_list
+          WHERE deleted_at IS NULL
+          ORDER BY name ASC"
+    )->fetchAll();
+}
+
+function movement_type_labels(): array
+{
+    return ['in' => 'INBOUND', 'out' => 'OUTBOUND', 'transfer' => 'TRANSFER'];
+}
+
+function movement_status_class(?string $type): string
+{
+    return $type === 'in' ? 'inbound' : ($type === 'out' ? 'outbound' : 'transfer');
+}
+
+function movement_qty(string $type, $quantity): string
+{
+    if ($type === 'in') {
+        return '+' . (int)$quantity;
+    }
+    if ($type === 'out') {
+        return '-' . (int)$quantity;
+    }
+    return '<span class="dash">—</span>';
 }

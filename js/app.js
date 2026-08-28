@@ -301,6 +301,11 @@
         URL.revokeObjectURL(url);
     }
 
+    function csvEscape(v) {
+        const s = String(v ?? "");
+        return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    }
+
     function loadScript(src) {
         return new Promise((resolve, reject) => {
             const s = document.createElement("script");
@@ -317,11 +322,7 @@
         if (!rows.length) { alert("Nothing to export."); return; }
 
         if (format === "csv") {
-            const escape = (v) => {
-                const s = String(v ?? "");
-                return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-            };
-            const lines = [labels.join(",")].concat(rows.map((r) => labels.map((l) => escape(r[l])).join(",")));
+            const lines = [labels.join(",")].concat(rows.map((r) => labels.map((l) => csvEscape(r[l])).join(",")));
             const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8;" });
             downloadBlob(blob, "inventory.csv");
         } else if (format === "xlsx") {
@@ -563,6 +564,23 @@
                 if (btn) btn.disabled = false;
             });
     }
+
+    // Submit a hidden POST form (used by the delete flows in the master-data
+    // and users pages).
+    window.submitPostForm = function (action, data) {
+        const f = document.createElement("form");
+        f.method = "POST";
+        f.action = action;
+        Object.keys(data || {}).forEach((key) => {
+            const inp = document.createElement("input");
+            inp.type = "hidden";
+            inp.name = key;
+            inp.value = data[key];
+            f.appendChild(inp);
+        });
+        document.body.appendChild(f);
+        f.submit();
+    };
 
 // Reusable modal that asks a question and optionally collects a single
     // text value. Resolves with the trimmed text on OK (possibly empty), or
@@ -1246,13 +1264,14 @@ document.addEventListener("change", (e) => {
         setCardVisible("add", true);
     }
 
-    // Google-style item search for the Stock In form.
-    function initStockSearch() {
-        const input = $("#stockItemSearch");
-        if (!input) return;
-        const box = $("#stockSuggest");
-        const hidden = $("#stockItemId");
-        const items = window.STOCK_ITEMS || [];
+    // Google-style autocomplete dropdown, shared by the stock-movement forms
+    // (STOCK_ITEMS) and the add-item form (MASTER_ITEMS).
+    function initSuggest(cfg) {
+        const input = $(cfg.input);
+        const box = $(cfg.box);
+        if (!input || !box) return;
+        const items = cfg.items || [];
+        if (!items.length) return;
 
         function closeBox() { box.innerHTML = ""; box.style.display = "none"; }
         function render(list) {
@@ -1262,63 +1281,67 @@ document.addEventListener("change", (e) => {
                 d.className = "suggest-item";
                 const label = document.createElement("div");
                 label.className = "suggest-label";
-                label.textContent = it.name + (it.brand ? "  ·  " + it.brand : "");
-                const sub = document.createElement("div");
-                sub.className = "suggest-sub";
-                sub.textContent = (it.serial || "") + "  —  On hand: " + it.quantity;
+                label.textContent = cfg.label(it);
+                if (cfg.sub) {
+                    const sub = document.createElement("div");
+                    sub.className = "suggest-sub";
+                    sub.textContent = cfg.sub(it);
+                    d.appendChild(sub);
+                }
                 d.appendChild(label);
-                d.appendChild(sub);
-                d.addEventListener("click", () => {
-                    hidden.value = it.id;
-                    input.value = it.name + (it.brand ? "  (" + it.brand + ")" : "");
-                    if (window.showItemCard) window.showItemCard(it);
-                    closeBox();
-                });
+                d.addEventListener("click", () => { cfg.pick(it); closeBox(); });
                 box.appendChild(d);
             });
             box.style.display = list.length ? "block" : "none";
         }
-
         function matches(q) {
-            return items
-                .filter((it) =>
-                    it.name.toLowerCase().includes(q) ||
-                    (it.brand || "").toLowerCase().includes(q) ||
-                    (it.serial || "").toLowerCase().includes(q)
-                )
-                .slice(0, 8);
+            return items.filter((it) => cfg.search(it).toLowerCase().includes(q)).slice(0, 8);
         }
 
         input.addEventListener("focus", () => {
             const q = input.value.trim().toLowerCase();
             render(q ? matches(q) : items.slice(0, 8));
         });
-
         input.addEventListener("input", () => {
-            hidden.value = "";
+            if (cfg.onInput) cfg.onInput();
             const q = input.value.trim().toLowerCase();
             if (!q) { closeBox(); return; }
             render(matches(q));
         });
-
         input.addEventListener("blur", () => setTimeout(closeBox, 150));
         document.addEventListener("click", (e) => {
             if (!input.contains(e.target) && !box.contains(e.target)) closeBox();
         });
     }
-    initStockSearch();
 
-    // Google-style product-name search for the Add Item form (Items page).
-    function initProductSuggest() {
-        const input = $("#product_name");
-        const box = $("#productSuggest");
-        if (!input || !box) return;
-        const items = window.MASTER_ITEMS || [];
-        if (!items.length) return;
+    // Stock In / Stock Out / Transfers item search.
+    initSuggest({
+        input: "#stockItemSearch",
+        box: "#stockSuggest",
+        items: window.STOCK_ITEMS,
+        label: (it) => it.name + (it.brand ? "  ·  " + it.brand : ""),
+        sub: (it) => (it.serial || "") + "  —  On hand: " + it.quantity,
+        search: (it) => (it.name || "") + " " + (it.brand || "") + " " + (it.serial || ""),
+        onInput: () => { const hidden = $("#stockItemId"); if (hidden) hidden.value = ""; },
+        pick: (it) => {
+            const hidden = $("#stockItemId");
+            if (hidden) hidden.value = it.id;
+            const input = $("#stockItemSearch");
+            if (input) input.value = it.name + (it.brand ? "  (" + it.brand + ")" : "");
+            if (window.showItemCard) window.showItemCard(it);
+        },
+    });
 
-        function closeBox() { box.innerHTML = ""; box.style.display = "none"; }
-        function pick(it) {
-            input.value = it.product_name;
+    // Add-item product-name search (Items and Generator pages).
+    initSuggest({
+        input: "#product_name",
+        box: "#productSuggest",
+        items: window.MASTER_ITEMS,
+        label: (it) => it.product_name + (it.brand ? "  ·  " + it.brand : ""),
+        search: (it) => (it.product_name || "") + " " + (it.brand || ""),
+        pick: (it) => {
+            const input = $("#product_name");
+            if (input) input.value = it.product_name;
             const brandSelect = $("#brand");
             if (brandSelect) {
                 if (it.brand && ![...brandSelect.options].some((o) => o.value === it.brand)) {
@@ -1329,39 +1352,8 @@ document.addEventListener("change", (e) => {
                 }
                 brandSelect.value = it.brand || "";
             }
-            closeBox();
-        }
-        function render(list) {
-            box.innerHTML = "";
-            list.forEach((it) => {
-                const d = document.createElement("div");
-                d.className = "suggest-item";
-                const label = document.createElement("div");
-                label.className = "suggest-label";
-                label.textContent = it.product_name + (it.brand ? "  ·  " + it.brand : "");
-                d.appendChild(label);
-                d.addEventListener("click", () => pick(it));
-                box.appendChild(d);
-            });
-            box.style.display = list.length ? "block" : "none";
-        }
-
-        input.addEventListener("focus", () => {
-            const q = input.value.trim().toLowerCase();
-            if (!q) { render(items.slice(0, 8)); return; }
-            render(items.filter((it) => it.product_name.toLowerCase().includes(q) || (it.brand || "").toLowerCase().includes(q)).slice(0, 8));
-        });
-        input.addEventListener("input", () => {
-            const q = input.value.trim().toLowerCase();
-            if (!q) { closeBox(); return; }
-            render(items.filter((it) => it.product_name.toLowerCase().includes(q) || (it.brand || "").toLowerCase().includes(q)).slice(0, 8));
-        });
-        input.addEventListener("blur", () => setTimeout(closeBox, 150));
-        document.addEventListener("click", (e) => {
-            if (!input.contains(e.target) && !box.contains(e.target)) closeBox();
-        });
-    }
-    initProductSuggest();
+        },
+    });
 
     // Populate the axis filter search inputs with the used values.
     setupAxisFilters();
@@ -1432,21 +1424,6 @@ document.addEventListener("change", (e) => {
 
         // ── helpers ────────────────────────────────────────────────────────────
         function allRows() { return qa(cfg.row); }
-
-        function buildPageRange(current, total) {
-            const delta = 1;
-            const set = new Set([1, total]);
-            for (let i = Math.max(2, current - delta); i <= Math.min(total - 1, current + delta); i++) set.add(i);
-            const sorted = Array.from(set).sort((a, b) => a - b);
-            const out = [];
-            let prev = 0;
-            for (const p of sorted) {
-                if (p - prev > 1) out.push("...");
-                out.push(p);
-                prev = p;
-            }
-            return out;
-        }
 
         function getFilterVal(group, tr) {
             const v = group.value;
@@ -1537,7 +1514,7 @@ document.addEventListener("change", (e) => {
 
             if (pageNumbers) {
                 pageNumbers.innerHTML = "";
-                buildPageRange(currentPage, pageCount).forEach((p) => {
+                pageRange(currentPage, pageCount).forEach((p) => {
                     if (p === "...") {
                         const s = document.createElement("span");
                         s.className = "pg-ellipsis";
@@ -1624,9 +1601,8 @@ document.addEventListener("change", (e) => {
             if (!rows.length) { alert("Nothing to export."); return; }
             const cols = cfg.exportCols || [];
             if (format === "csv") {
-                const esc = (v) => { const s = String(v ?? ""); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
                 const lines = [cols.map((c) => c.label).join(",")].concat(
-                    rows.map((r) => cols.map((c) => esc(r[c.key])).join(","))
+                    rows.map((r) => cols.map((c) => csvEscape(r[c.key])).join(","))
                 );
                 downloadBlob(new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8;" }), cfg.exportName + ".csv");
             } else if (format === "xlsx") {

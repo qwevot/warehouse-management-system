@@ -9,22 +9,13 @@ try {
     $pdo = db();
     // READ: every stock movement (inbound, outbound, transfer) across the
     // warehouse, newest first, joined with the item name for display.
-    $movements = $pdo->query(
-        "SELECT m.*, COALESCE(i.name, '') AS item_name
-         FROM stock_movements m
-         LEFT JOIN inventory_list i ON i.id = m.item_id
-         ORDER BY m.created_at DESC, m.id DESC"
-    )->fetchAll();
+    $movements = fetch_movements($pdo);
 } catch (Exception $e) {
     $movements = [];
     $dbError   = 'Could not load the activity history from the database.';
 }
 
-$typeLabels = [
-    'in'       => 'INBOUND',
-    'out'      => 'OUTBOUND',
-    'transfer' => 'TRANSFER',
-];
+$typeLabels = movement_type_labels();
 
 include __DIR__ . '/../includes/header.php';
 ?>
@@ -61,20 +52,16 @@ include __DIR__ . '/../includes/header.php';
                         <tr>
                             <td><?php echo $i + 1; ?></td>
                             <td>
-                                <span class="status <?php echo e($m['type'] === 'in' ? 'inbound' : ($m['type'] === 'out' ? 'outbound' : 'transfer')); ?>">
+                                <span class="status <?php echo e(movement_status_class($m['type'])); ?>">
                                     <?php echo e($typeLabels[$m['type']] ?? strtoupper((string)$m['type'])); ?>
                                 </span>
                             </td>
                             <td><?php echo $m['item_name'] ? e($m['item_name']) : ('Item #' . (int)$m['item_id']); ?></td>
-                            <td>
-                                <?php if ($m['type'] === 'in'): ?>+<?php echo (int)$m['quantity'];
-                                elseif ($m['type'] === 'out'): ?>-<?php echo (int)$m['quantity'];
-                                else: ?><span style="color:#9ca3af;">—</span><?php endif; ?>
-                            </td>
-                            <td><?php echo $m['issued_to'] ? e($m['issued_to']) : '<span style="color:#9ca3af;">—</span>'; ?></td>
-                            <td><?php echo $m['note'] ? e($m['note']) : '<span style="color:#9ca3af;">—</span>'; ?></td>
-                            <td><?php echo $m['modified_by'] ? e($m['modified_by']) : '<span style="color:#9ca3af;">—</span>'; ?></td>
-                            <td><?php echo e(date('Y-m-d H:i', strtotime($m['created_at']))); ?></td>
+                            <td><?php echo movement_qty($m['type'], $m['quantity']); ?></td>
+                            <td><?php echo dash($m['issued_to']); ?></td>
+                            <td><?php echo dash($m['note']); ?></td>
+                            <td><?php echo dash($m['modified_by']); ?></td>
+                            <td><?php echo e(fmt_datetime($m['created_at'])); ?></td>
                         </tr>
                     <?php endforeach; ?>
                 <?php endif; ?>

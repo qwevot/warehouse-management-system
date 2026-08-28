@@ -7,7 +7,7 @@ require_login();
 
 try {
     $pdo = db();
-    $items = $pdo->query("SELECT id, name, brand, serial, quantity, location, barcode, qr, status, photo, created_at FROM inventory_list WHERE deleted_at IS NULL ORDER BY name ASC")->fetchAll();
+    $items = fetch_active_items($pdo);
 } catch (Exception $e) {
     $items = [];
     $dbError = 'Could not load data from the database.';
@@ -16,17 +16,7 @@ try {
 include __DIR__ . '/../includes/header.php';
 ?>
 
-<?php if (isset($_GET['added'])): ?>
-    <div class="flash success"><?php echo e($_GET['added']); ?></div>
-<?php endif; ?>
-
-<?php if (isset($_GET['error'])): ?>
-    <div class="flash error"><?php echo e($_GET['error']); ?></div>
-<?php endif; ?>
-
-<?php if (!empty($dbError)): ?>
-    <div class="flash error"><?php echo e($dbError); ?></div>
-<?php endif; ?>
+<?php include __DIR__ . '/../includes/flash.php'; ?>
 
 <section class="inventory-section suggest-section">
 
@@ -39,24 +29,7 @@ include __DIR__ . '/../includes/header.php';
 
         <div class="form-grid">
 
-            <div class="field">
-                <label for="stockItemSearch">Item *</label>
-                <div class="suggest-wrap">
-                    <input
-                        type="text"
-                        id="stockItemSearch"
-                        placeholder="Search item name, brand, or serial..."
-                        autocomplete="off"
-                        required
-                    >
-                    <input type="hidden" name="item_id" id="stockItemId">
-                    <div class="suggest-box" id="stockSuggest"></div>
-                    <button type="button" class="btn sm upload photo-btn scan-inline" onclick="openScanModal()" title="Scan Item">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2"></path><path d="M17 3h2a2 2 0 0 1 2 2v2"></path><path d="M21 17v2a2 2 0 0 1-2 2h-2"></path><path d="M7 21H5a2 2 0 0 1-2-2v-2"></path><line x1="7" y1="12" x2="17" y2="12"></line></svg>
-                        Scan
-                    </button>
-                </div>
-            </div>
+            <?php include __DIR__ . '/../includes/item-search-field.php'; ?>
 
             <div class="field">
                 <label>Current Location</label>
@@ -72,21 +45,13 @@ include __DIR__ . '/../includes/header.php';
 
             <div class="field">
                 <label>Destination Location *</label>
-                <div class="location-picker">
-                    <div class="loc-input">
-                        <label for="transferShelf">Shelf</label>
-                        <input type="text" id="transferShelf" maxlength="2" inputmode="numeric" placeholder="01" oninput="onlyDigits(this); updateTransferLocation()">
-                    </div>
-                    <div class="loc-input">
-                        <label for="transferRow">Row</label>
-                        <input type="text" id="transferRow" maxlength="2" inputmode="numeric" placeholder="01" oninput="onlyDigits(this); updateTransferLocation()">
-                    </div>
-                    <div class="loc-input">
-                        <label for="transferCol">Column</label>
-                        <input type="text" id="transferCol" maxlength="2" inputmode="numeric" placeholder="01" oninput="onlyDigits(this); updateTransferLocation()">
-                    </div>
-                </div>
-                <input type="hidden" name="destination" id="transferDestination">
+                <?php
+                $locPrefix = 'transfer';
+                $locUpdateFn = 'updateTransferLocation()';
+                $locHiddenName = 'destination';
+                $locHiddenId = 'transferDestination';
+                include __DIR__ . '/../includes/location-picker.php';
+                ?>
             </div>
                         
         </div>
@@ -105,21 +70,8 @@ include __DIR__ . '/../includes/header.php';
 <section class="inventory-section" id="inventory" style="margin-top:20px;">
 
     <?php
-    $inventory = $items;
-    $rowSelectable = false;
-    $tableColumns = ['no', 'item', 'brand', 'serial', 'quantity', 'location', 'status', 'action'];
-    $renderActions = function ($item) { ?>
-        <button class="btn icon-btn view" title="View" onclick="openItemModal(<?php echo (int)$item['id']; ?>)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><circle cx="12" cy="8" r="1" fill="currentColor" stroke="none"/></svg>
-        </button>
-        <?php if (user_can('movement.manage')): ?>
-        <button class="btn icon-btn view" title="Autofill the transfer form with this item" onclick="pickStockItem(<?php echo (int)$item['id']; ?>)">
-            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><g id="SVGRepo_bgCarrier" stroke-width="0"></g><g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round"></g><g id="SVGRepo_iconCarrier"> <path d="M4 17V15.8C4 14.1198 4 13.2798 4.32698 12.638C4.6146 12.0735 5.07354 11.6146 5.63803 11.327C6.27976 11 7.11984 11 8.8 11H20M20 11L16 7M20 11L16 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path> </g></svg>
-        </button>
-        <?php endif; ?>
-    <?php };
-    $emptyMessage = 'No items registered yet.';
-    include __DIR__ . '/../includes/inventory-table.php';
+    $autofillTitle = 'Autofill the transfer form with this item';
+    include __DIR__ . '/../includes/movement-item-list.php';
     ?>
 
 </section>

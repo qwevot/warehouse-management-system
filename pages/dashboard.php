@@ -22,21 +22,12 @@ try {
     $items = $pdo->query("SELECT id, name, brand, serial, quantity, location, barcode, qr, status, photo FROM inventory_list WHERE deleted_at IS NULL ORDER BY name ASC")->fetchAll();
 
     // Recent activity (all movements; paginated client-side).
-    $movements = $pdo->query(
-        "SELECT m.*, COALESCE(i.name, '') AS item_name
-         FROM stock_movements m
-         LEFT JOIN inventory_list i ON i.id = m.item_id
-         ORDER BY m.created_at DESC, m.id DESC"
-    )->fetchAll();
+    $movements = fetch_movements($pdo);
 } catch (Exception $e) {
     $dbError = 'Could not load dashboard data from the database.';
 }
 
-$typeLabels = [
-    'in'       => 'INBOUND',
-    'out'      => 'OUTBOUND',
-    'transfer' => 'TRANSFER',
-];
+$typeLabels = movement_type_labels();
 
 include __DIR__ . '/../includes/header.php';
 
@@ -108,16 +99,12 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
                         <tr class="move-row" data-created="<?php echo strtotime($m['created_at']); ?>">
                             <td class="no-col"><?php echo $i + 1; ?></td>
                             <td>
-                                <span class="status <?php echo e($m['type'] === 'in' ? 'inbound' : ($m['type'] === 'out' ? 'outbound' : 'transfer')); ?>">
+                                <span class="status <?php echo e(movement_status_class($m['type'])); ?>">
                                     <?php echo e($typeLabels[$m['type']] ?? strtoupper((string)$m['type'])); ?>
                                 </span>
                             </td>
                             <td><?php echo $m['item_name'] ? e($m['item_name']) : ('Item #' . (int)$m['item_id']); ?></td>
-                            <td>
-                                <?php if ($m['type'] === 'in'): ?>+<?php echo (int)$m['quantity'];
-                                elseif ($m['type'] === 'out'): ?>-<?php echo (int)$m['quantity'];
-                                else: ?><span class="dash">—</span><?php endif; ?>
-                            </td>
+                            <td><?php echo movement_qty($m['type'], $m['quantity']); ?></td>
                             <td><?php echo dash($m['issued_to'] ?? null); ?></td>
                             <td><?php echo dash($m['note'] ?? null); ?></td>
                             <td class="registered-on"><?php echo e(fmt_datetime($m['created_at'])); ?></td>
@@ -141,66 +128,6 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
         window.showItemCard(item);
         return true;
     });
-
-    // Dashboard quick-search (self-contained; the shared initStockSearch binds
-    // to #stockItemSearch which this page intentionally does not use).
-    (function () {
-        const input = document.getElementById("dashSearch");
-        const box = document.getElementById("dashSuggest");
-        if (!input || !box) return;
-        const items = window.STOCK_ITEMS || [];
-
-        function closeBox() { box.innerHTML = ""; box.style.display = "none"; }
-
-        function render(list) {
-            box.innerHTML = "";
-            list.forEach(function (it) {
-                const d = document.createElement("div");
-                d.className = "suggest-item";
-                const label = document.createElement("div");
-                label.className = "suggest-label";
-                label.textContent = it.name + (it.brand ? "  ·  " + it.brand : "");
-                const sub = document.createElement("div");
-                sub.className = "suggest-sub";
-                sub.textContent = (it.serial || "") + "  —  On hand: " + it.quantity;
-                d.appendChild(label);
-                d.appendChild(sub);
-                d.addEventListener("mousedown", function (e) {
-                    e.preventDefault();
-                    input.value = it.name + (it.brand ? "  (" + it.brand + ")" : "");
-                    window.showItemCard(it);
-                    closeBox();
-                });
-                box.appendChild(d);
-            });
-            box.style.display = list.length ? "block" : "none";
-        }
-
-        function matches(q) {
-            return items.filter(function (it) {
-                return String(it.name || "").toLowerCase().indexOf(q) !== -1 ||
-                       String(it.brand || "").toLowerCase().indexOf(q) !== -1 ||
-                       String(it.serial || "").toLowerCase().indexOf(q) !== -1;
-            }).slice(0, 8);
-        }
-
-        input.addEventListener("focus", function () {
-            const q = input.value.trim().toLowerCase();
-            render(q ? matches(q) : items.slice(0, 8));
-        });
-
-        input.addEventListener("input", function () {
-            const q = input.value.trim().toLowerCase();
-            if (!q) { closeBox(); return; }
-            render(matches(q));
-        });
-
-        input.addEventListener("blur", function () { setTimeout(closeBox, 150); });
-
-        document.addEventListener("click", function (e) {
-            if (!input.contains(e.target) && !box.contains(e.target)) closeBox();
-        });
-    })();
 </script>
 
 <script>

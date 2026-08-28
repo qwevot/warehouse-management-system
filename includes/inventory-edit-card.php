@@ -21,32 +21,19 @@
                 </div>
 
                 <div class="field">
-                    <div class="location-picker">
-                        <div class="loc-input">
-                            <label for="editLocShelf">Shelf</label>
-                            <input type="text" id="editLocShelf" maxlength="2" inputmode="numeric" placeholder="01" oninput="onlyDigits(this); updateEditLocation()">
-                        </div>
-                        <div class="loc-input">
-                            <label for="editLocRow">Row</label>
-                            <input type="text" id="editLocRow" maxlength="2" inputmode="numeric" placeholder="01" oninput="onlyDigits(this); updateEditLocation()">
-                        </div>
-                        <div class="loc-input">
-                            <label for="editLocCol">Column</label>
-                            <input type="text" id="editLocCol" maxlength="2" inputmode="numeric" placeholder="01" oninput="onlyDigits(this); updateEditLocation()">
-                        </div>
-                    </div>
-                    <input type="hidden" name="location" id="edit_location">
+                    <?php
+                    $locPrefix = 'editLoc';
+                    $locUpdateFn = 'updateEditLocation()';
+                    $locHiddenName = 'location';
+                    $locHiddenId = 'edit_location';
+                    include __DIR__ . '/location-picker.php';
+                    ?>
                     <div class="error-msg">Please enter a location.</div>
                 </div>
 
                 <div class="field">
                     <label for="edit_brand">Brand</label>
-                    <select id="edit_brand" name="brand">
-                        <option value="">— Select brand —</option>
-                        <?php foreach (all_brands() as $b): ?>
-                            <option value="<?php echo e($b); ?>"><?php echo e($b); ?></option>
-                        <?php endforeach; ?>
-                    </select>
+                    <?php $brandSelectId = 'edit_brand'; include __DIR__ . '/brand-select.php'; ?>
                 </div>
 
                 <div class="field">

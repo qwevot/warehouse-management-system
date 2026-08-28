@@ -36,12 +36,7 @@ window.MASTER_ITEMS = <?php echo json_encode(array_map(function($mi) {
 
                 <div class="field">
                     <label for="brand">Brand</label>
-                    <select id="brand" name="brand">
-                        <option value="">— Select brand —</option>
-                        <?php foreach (all_brands() as $b): ?>
-                            <option value="<?php echo e($b); ?>"><?php echo e($b); ?></option>
-                        <?php endforeach; ?>
-                    </select>
+                    <?php include __DIR__ . '/brand-select.php'; ?>
                 </div>
 
                 <div class="field">
@@ -50,21 +45,13 @@ window.MASTER_ITEMS = <?php echo json_encode(array_map(function($mi) {
                 </div>
 
                 <div class="field">
-                    <div class="location-picker">
-                        <div class="loc-input">
-                            <label for="locShelf">Shelf</label>
-                            <input type="text" id="locShelf" maxlength="2" inputmode="numeric" placeholder="01" oninput="onlyDigits(this); updateLocation()">
-                        </div>
-                        <div class="loc-input">
-                            <label for="locRow">Row</label>
-                            <input type="text" id="locRow" maxlength="2" inputmode="numeric" placeholder="01" oninput="onlyDigits(this); updateLocation()">
-                        </div>
-                        <div class="loc-input">
-                            <label for="locCol">Column</label>
-                            <input type="text" id="locCol" maxlength="2" inputmode="numeric" placeholder="01" oninput="onlyDigits(this); updateLocation()">
-                        </div>
-                    </div>
-                    <input type="hidden" name="location" id="location">
+                    <?php
+                    $locPrefix = 'loc';
+                    $locUpdateFn = 'updateLocation()';
+                    $locHiddenName = 'location';
+                    $locHiddenId = 'location';
+                    include __DIR__ . '/location-picker.php';
+                    ?>
                 </div>
 
             </div>
