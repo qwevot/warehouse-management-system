@@ -3,23 +3,36 @@ $pageTitle = 'Barcode & QR Code Generator';
 $activeNav = 'barcode';
 
 require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/inventory-data.php';
+
 require_login();
+
+$mode   = 'generator';
+$state  = inventory_state_from_request();
+$rows   = [];
+$total  = 0;
+$facets = ['brand' => [], 'shelf' => [], 'row' => [], 'col' => []];
+$dbError = '';
 
 try {
     $pdo = db();
-    // READ: every non-deleted inventory record, newest first, same as the inventory list.
-    $inventory = $pdo->query("SELECT * FROM inventory_list WHERE deleted_at IS NULL ORDER BY id DESC")->fetchAll();
+    // READ: one page of non-deleted inventory records, newest first by default.
+    $result = inventory_fetch($pdo, $mode, $state);
+    $rows  = $result['rows'];
+    $total = $result['total'];
+    $state['page'] = $result['page'];
+    $state['size'] = $result['size'];
+    $facets = inventory_facets($pdo, $mode);
 } catch (Exception $e) {
-    $inventory = [];
-    $dbError   = 'Could not load inventory from the database.';
+    $dbError = 'Could not load inventory from the database.';
 }
 
 include __DIR__ . '/../includes/header.php';
-?>
 
-<?php if (!empty($dbError)): ?>
-    <div class="flash error"><?php echo e($dbError); ?></div>
-<?php endif; ?>
+if ($dbError !== '') {
+    echo '<div class="flash error">' . e($dbError) . '</div>';
+}
+?>
 
 <section class="inventory-section" id="inventory">
 
@@ -43,17 +56,6 @@ include __DIR__ . '/../includes/header.php';
     </div>
 
     <?php
-    $rowSelectable = true;
-    $tableColumns = ['no', 'photo', 'item', 'quantity','serial', 'location', 'barcode', 'action'];
-    $renderActions = function ($item) {
-        if ($item['barcode']) { ?>
-            <button class="btn icon-btn view" title="View" onclick="openItemModal(<?php echo (int)$item['id']; ?>)">
-                <?php echo icon_view(); ?>
-            </button>
-        <?php } elseif (user_can('inventory.manage')) { ?>
-            <button class="btn sm primary" title="Generate Barcode & QR Code" onclick="openGenModal(<?php echo (int)$item['id']; ?>)">Generate</button>
-        <?php }
-    };
     $emptyMessage = 'No items registered yet.';
     include __DIR__ . '/../includes/inventory-table.php';
     ?>

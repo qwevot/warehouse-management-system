@@ -95,7 +95,7 @@ $itemsPagination = buildPagination('items');
                     </tr>
                 <?php else: ?>
                     <?php foreach ($items as $i => $it): ?>
-                        <tr class="master-item-row" data-code="<?php echo e(mb_strtolower($it['product_code'])); ?>" data-name="<?php echo e(mb_strtolower($it['product_name'])); ?>" data-brand="<?php echo e(mb_strtolower($it['brand'] ?? '')); ?>" data-class="<?php echo e(mb_strtolower($it['product_class'] ?? '')); ?>" data-qty="<?php echo (int)$it['total_qty']; ?>" data-modified-ts="<?php echo $it['updated_at'] ? strtotime($it['updated_at']) : 0; ?>">
+                        <tr class="master-item-row" data-code="<?php echo e($it['product_code']); ?>" data-name="<?php echo e($it['product_name']); ?>" data-brand="<?php echo e($it['brand'] ?? ''); ?>" data-class="<?php echo e($it['product_class'] ?? ''); ?>" data-qty="<?php echo (int)$it['total_qty']; ?>" data-modified-ts="<?php echo $it['updated_at'] ? strtotime($it['updated_at']) : 0; ?>">
                             <td class="no-col"><?php echo $i + 1; ?></td>
                             <td>
                                 <div class="row-actions">
@@ -187,6 +187,7 @@ initDataTable({
     sortSelect:     '#itemsSortSelect',
     tbody:          '#itemsBody',
     row:            '.master-item-row',
+    caseSensitive:  true,
     filterWrap:     '#itemsFilterWrap',
     filterBtn:      '#itemsFilterBtn',
     filterPanel:    '#itemsFilterPanel',
@@ -213,14 +214,14 @@ initDataTable({
         { title: 'Product Class',key: 'product_class',value: 'class' },
     ],
     sorters: {
-        'code-asc':     function(a,b) { return a.dataset.code.localeCompare(b.dataset.code); },
-        'code-desc':    function(a,b) { return b.dataset.code.localeCompare(a.dataset.code); },
-        'name-asc':     function(a,b) { return a.dataset.name.localeCompare(b.dataset.name); },
-        'name-desc':    function(a,b) { return b.dataset.name.localeCompare(a.dataset.name); },
-        'brand-asc':    function(a,b) { return a.dataset.brand.localeCompare(b.dataset.brand); },
-        'brand-desc':   function(a,b) { return b.dataset.brand.localeCompare(a.dataset.brand); },
-        'class-asc':    function(a,b) { return a.dataset.class.localeCompare(b.dataset.class); },
-        'class-desc':   function(a,b) { return b.dataset.class.localeCompare(a.dataset.class); },
+        'code-asc':     function(a,b) { return String(a.dataset.code||"").toLowerCase().localeCompare(String(b.dataset.code||"").toLowerCase()); },
+        'code-desc':    function(a,b) { return String(b.dataset.code||"").toLowerCase().localeCompare(String(a.dataset.code||"").toLowerCase()); },
+        'name-asc':     function(a,b) { return String(a.dataset.name||"").toLowerCase().localeCompare(String(b.dataset.name||"").toLowerCase()); },
+        'name-desc':    function(a,b) { return String(b.dataset.name||"").toLowerCase().localeCompare(String(a.dataset.name||"").toLowerCase()); },
+        'brand-asc':    function(a,b) { return String(a.dataset.brand||"").toLowerCase().localeCompare(String(b.dataset.brand||"").toLowerCase()); },
+        'brand-desc':   function(a,b) { return String(b.dataset.brand||"").toLowerCase().localeCompare(String(a.dataset.brand||"").toLowerCase()); },
+        'class-asc':    function(a,b) { return String(a.dataset.class||"").toLowerCase().localeCompare(String(b.dataset.class||"").toLowerCase()); },
+        'class-desc':   function(a,b) { return String(b.dataset.class||"").toLowerCase().localeCompare(String(a.dataset.class||"").toLowerCase()); },
         'modified-asc': function(a,b) { return parseInt(a.dataset.modifiedTs) - parseInt(b.dataset.modifiedTs); },
         'modified-desc':function(a,b) { return parseInt(b.dataset.modifiedTs) - parseInt(a.dataset.modifiedTs); },
     },

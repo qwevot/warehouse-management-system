@@ -25,25 +25,7 @@ include __DIR__ . '/flash.php';
     </div>
 
     <?php
-    $rowActions = [
-        'edit'   => ['Edit',   'openEditModal(ID)',   icon_edit()],
-        'view'   => ['View',   'openItemModal(ID)',   icon_view()],
-        'delete' => ['Delete', 'runDeleteItem(ID)',   icon_delete()],
-    ];
-    if (!user_can('inventory.manage')) {
-        unset($rowActions['edit'], $rowActions['delete']);
-    }
-    $renderActions = function ($item) use ($rowActions) {
-        ob_start();
-        foreach ($rowActions as $class => [$title, $fn, $icon]): ?>
-            <button class="btn icon-btn <?php echo $class; ?>" title="<?php echo $title; ?>" onclick="<?php echo str_replace('ID', (int)$item['id'], $fn); ?>">
-                <?php echo $icon; ?>
-            </button>
-        <?php endforeach;
-        return ob_get_clean();
-    };
     $emptyMessage = 'No items yet. Click "+ Add Item" to register the first one.';
-    $tableColumns = ['no', 'action', 'photo', 'item', 'brand', 'quantity', 'location', 'status', 'serial', 'barcode', 'registered', 'last_modified', 'modified_by'];
     include __DIR__ . '/inventory-table.php';
     ?>
 

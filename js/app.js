@@ -1421,6 +1421,7 @@ document.addEventListener("change", (e) => {
 
         const groups     = cfg.filterGroups || [];
         const filterSets = groups.map(() => new Set());
+        const caseSensitive = !!cfg.caseSensitive;
 
         // ── helpers ────────────────────────────────────────────────────────────
         function allRows() { return qa(cfg.row); }
@@ -1462,10 +1463,12 @@ document.addEventListener("change", (e) => {
         }
 
         function visibleData() {
-            const query = searchInput ? searchInput.value.trim().toLowerCase() : "";
+            const rawQuery = searchInput ? searchInput.value.trim() : "";
+            const query = caseSensitive ? rawQuery : rawQuery.toLowerCase();
             return (cfg.data || []).filter((row) => {
                 if (query) {
-                    const text = (cfg.dataText ? cfg.dataText(row) : JSON.stringify(row)).toLowerCase();
+                    const rawText = (cfg.dataText ? cfg.dataText(row) : JSON.stringify(row));
+                    const text = caseSensitive ? rawText : rawText.toLowerCase();
                     if (!text.includes(query)) return false;
                 }
                 for (let i = 0; i < groups.length; i++) {
@@ -1488,9 +1491,11 @@ document.addEventListener("change", (e) => {
         function render(resetPage) {
             if (resetPage) currentPage = 1;
 
-            const query = searchInput ? searchInput.value.trim().toLowerCase() : "";
+            const rawQuery = searchInput ? searchInput.value.trim() : "";
+            const query = caseSensitive ? rawQuery : rawQuery.toLowerCase();
             let rows = allRows().filter((tr) => {
-                return tr.innerText.toLowerCase().includes(query) && rowMatchesFilters(tr);
+                const text = caseSensitive ? tr.innerText : tr.innerText.toLowerCase();
+                return text.includes(query) && rowMatchesFilters(tr);
             });
             sortRows(rows);
 

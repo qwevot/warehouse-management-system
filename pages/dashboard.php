@@ -5,7 +5,9 @@ $activeNav = 'dashboard';
 require_once __DIR__ . '/../includes/auth.php';
 require_login();
 
-$totalItems = $available = $outItems = 0;
+$available = 0;
+$brandsInUse = 0;
+$itemsInUse = 0;
 $items = [];
 $movements = [];
 $dbError = '';
@@ -14,9 +16,9 @@ try {
     $pdo = db();
 
     // KPI counts (active = not deleted).
-    $totalItems = (int)$pdo->query("SELECT COUNT(*) FROM inventory_list WHERE deleted_at IS NULL")->fetchColumn();
-    $available  = (int)$pdo->query("SELECT COUNT(*) FROM inventory_list WHERE deleted_at IS NULL AND status = 'available'")->fetchColumn();
-    $outItems   = (int)$pdo->query("SELECT COUNT(*) FROM inventory_list WHERE deleted_at IS NULL AND status = 'taken'")->fetchColumn();
+    $available   = (int)$pdo->query("SELECT COUNT(*) FROM inventory_list WHERE deleted_at IS NULL AND status = 'available'")->fetchColumn();
+    $brandsInUse = (int)$pdo->query("SELECT COUNT(DISTINCT brand) FROM inventory_list WHERE deleted_at IS NULL AND brand IS NOT NULL AND brand <> ''")->fetchColumn();
+    $itemsInUse  = (int)$pdo->query("SELECT COUNT(DISTINCT name) FROM inventory_list WHERE deleted_at IS NULL")->fetchColumn();
 
     // Items for the quick search (feeds window.STOCK_ITEMS).
     $items = $pdo->query("SELECT id, name, brand, serial, quantity, location, barcode, qr, status, photo FROM inventory_list WHERE deleted_at IS NULL ORDER BY name ASC")->fetchAll();
@@ -47,29 +49,31 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
 <?php endif; ?>
 
 <div class="kpi-grid">
-    <div class="kpi-card">
-        <div class="kpi-label">Total Items</div>
-        <div class="kpi-value"><?php echo $totalItems; ?></div>
-    </div>
-    <div class="kpi-card available">
-        <div class="kpi-label">Available</div>
+    <a href="<?php echo BASE_URL; ?>/pages/brand.php" class="kpi-card blue kpi-link">
+        <div class="kpi-label">Brands in Use</div>
+        <div class="kpi-value"><?php echo $brandsInUse; ?></div>
+        <div class="kpi-hint">View Brands -></div>
+    </a>
+    <a href="<?php echo BASE_URL; ?>/pages/index.php" class="kpi-card red kpi-link">
+        <div class="kpi-label">Items in Use</div>
+        <div class="kpi-value"><?php echo $itemsInUse; ?></div>
+        <div class="kpi-hint">View Items -></div>
+    </a>
+    <a href="<?php echo BASE_URL; ?>/pages/index.php" class="kpi-card amber kpi-link">
+        <div class="kpi-label">Items in Inventory</div>
         <div class="kpi-value"><?php echo $available; ?></div>
-    </div>
-    <div class="kpi-card taken">
-        <div class="kpi-label">Out of Warehouse</div>
-        <div class="kpi-value"><?php echo $outItems; ?></div>
-    </div>
+        <div class="kpi-hint">View Inventory List -></div>
+    </a>
+    <button type="button" class="kpi-card green scan-link" onclick="openScanModal()">
+        <div class="kpi-label">Scan Item</div>
+        <div class="scan-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="28" height="28" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2"></path><path d="M17 3h2a2 2 0 0 1 2 2v2"></path><path d="M21 17v2a2 2 0 0 1-2 2h-2"></path><path d="M7 21H5a2 2 0 0 1-2-2v-2"></path><line x1="7" y1="12" x2="17" y2="12"></line></svg>
+        </div>
+        <div class="kpi-hint">Scan an item to view details</div>
+    </button>
 </div>
 
-<section class="inventory-section dashboard-find">
-    <div class="section-header">
-    <button type="button" class="btn primary find-scan" onclick="openScanModal()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="22" height="22" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2"></path><path d="M17 3h2a2 2 0 0 1 2 2v2"></path><path d="M21 17v2a2 2 0 0 1-2 2h-2"></path><path d="M7 21H5a2 2 0 0 1-2-2v-2"></path><line x1="7" y1="12" x2="17" y2="12"></line></svg>
-        Scan an Item
-    </button>
-
-    <?php include __DIR__ . '/../includes/item-card-select.php'; ?>
-</section>
+<?php include __DIR__ . '/../includes/item-card-select.php'; ?>
 
 <section class="inventory-section">
     <div class="section-header">
