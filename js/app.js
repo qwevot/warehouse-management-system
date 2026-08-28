@@ -732,12 +732,6 @@
         $("#editId").value = item.id;
         $("#edit_item_name").value = item.name;
         const brandSel = $("#edit_brand");
-        if (![...brandSel.options].some((o) => o.value === item.brand)) {
-            const opt = document.createElement("option");
-            opt.value = item.brand;
-            opt.textContent = item.brand;
-            brandSel.appendChild(opt);
-        }
         brandSel.value = item.brand || "";
         $("#edit_quantity").value = item.quantity || 1;
         $("#edit_serial").value = item.serial || "";
@@ -1266,12 +1260,13 @@ document.addEventListener("change", (e) => {
 
     // Google-style autocomplete dropdown, shared by the stock-movement forms
     // (STOCK_ITEMS) and the add-item form (MASTER_ITEMS).
-    function initSuggest(cfg) {
+        function initSuggest(cfg) {
         const input = $(cfg.input);
         const box = $(cfg.box);
         if (!input || !box) return;
         const items = cfg.items || [];
         if (!items.length) return;
+        const limit = cfg.limit || 8;
 
         function closeBox() { box.innerHTML = ""; box.style.display = "none"; }
         function render(list) {
@@ -1295,12 +1290,12 @@ document.addEventListener("change", (e) => {
             box.style.display = list.length ? "block" : "none";
         }
         function matches(q) {
-            return items.filter((it) => cfg.search(it).toLowerCase().includes(q)).slice(0, 8);
+            return items.filter((it) => cfg.search(it).toLowerCase().includes(q)).slice(0, limit);
         }
 
         input.addEventListener("focus", () => {
             const q = input.value.trim().toLowerCase();
-            render(q ? matches(q) : items.slice(0, 8));
+            render(q ? matches(q) : items.slice(0, limit));
         });
         input.addEventListener("input", () => {
             if (cfg.onInput) cfg.onInput();
@@ -1343,16 +1338,25 @@ document.addEventListener("change", (e) => {
             const input = $("#product_name");
             if (input) input.value = it.product_name;
             const brandSelect = $("#brand");
-            if (brandSelect) {
-                if (it.brand && ![...brandSelect.options].some((o) => o.value === it.brand)) {
-                    const o = document.createElement("option");
-                    o.value = it.brand;
-                    o.textContent = it.brand;
-                    brandSelect.appendChild(o);
-                }
-                brandSelect.value = it.brand || "";
-            }
+            if (brandSelect) brandSelect.value = it.brand || "";
         },
+    });
+
+    // Brand autocomplete for every brand field (brand-select.php). Each brand
+    // input is wrapped in a .suggest-wrap with a sibling .suggest-box.
+    const brandItems = (Array.isArray(window.BRANDS) ? window.BRANDS : []).filter(Boolean).map((name) => ({ name }));
+    $all(".js-brand-suggest").forEach((input) => {
+        const box = input.parentElement ? input.parentElement.querySelector(".suggest-box") : null;
+        if (!box || !brandItems.length) return;
+        initSuggest({
+            input: "#" + input.id,
+            box: "#" + box.id,
+            items: brandItems,
+            limit: 50,
+            label: (b) => b.name,
+            search: (b) => b.name,
+            pick: (b) => { input.value = b.name; },
+        });
     });
 
     // Populate the axis filter search inputs with the used values.

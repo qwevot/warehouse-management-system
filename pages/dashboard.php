@@ -48,6 +48,10 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
     <div class="flash error"><?php echo e($dbError); ?></div>
 <?php endif; ?>
 
+<div class="welcome-header">
+    <h1>Welcome, <?php echo e($fullName); ?>!</h1>
+</div>
+
 <div class="kpi-grid">
     <a href="<?php echo BASE_URL; ?>/pages/brand.php" class="kpi-card blue kpi-link">
         <div class="kpi-label">Brands in Use</div>
