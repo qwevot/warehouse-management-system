@@ -5,6 +5,7 @@ $activeNav = 'dashboard';
 require_once __DIR__ . '/../includes/auth.php';
 require_login();
 
+$totalQty = 0;
 $available = 0;
 $brandsInUse = 0;
 $itemsInUse = 0;
@@ -16,6 +17,13 @@ try {
     $pdo = db();
 
     // KPI counts (active = not deleted).
+    $stmt = $pdo->query("
+    SELECT COALESCE(SUM(quantity), 0) 
+    FROM inventory_list 
+    WHERE deleted_at IS NULL AND status = 'available'
+");
+
+    $totalQty    = (int)$stmt->fetchColumn();
     $available   = (int)$pdo->query("SELECT COUNT(*) FROM inventory_list WHERE deleted_at IS NULL AND status = 'available'")->fetchColumn();
     $brandsInUse = (int)$pdo->query("SELECT COUNT(DISTINCT brand) FROM inventory_list WHERE deleted_at IS NULL AND brand IS NOT NULL AND brand <> ''")->fetchColumn();
     $itemsInUse  = (int)$pdo->query("SELECT COUNT(DISTINCT name) FROM inventory_list WHERE deleted_at IS NULL")->fetchColumn();
@@ -55,17 +63,17 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
 <div class="kpi-grid">
     <a href="<?php echo BASE_URL; ?>/pages/brand.php" class="kpi-card blue kpi-link">
         <div class="kpi-label">Brands in Use</div>
-        <div class="kpi-value"><?php echo $brandsInUse; ?></div>
+        <div class="kpi-value"><?php echo $brandsInUse; ?> Brands</div>
         <div class="kpi-hint">View Brands -></div>
     </a>
     <a href="<?php echo BASE_URL; ?>/pages/index.php" class="kpi-card red kpi-link">
         <div class="kpi-label">Items in Use</div>
-        <div class="kpi-value"><?php echo $itemsInUse; ?></div>
+        <div class="kpi-value"><?php echo $itemsInUse; ?> Items</div>
         <div class="kpi-hint">View Items -></div>
     </a>
     <a href="<?php echo BASE_URL; ?>/pages/index.php" class="kpi-card amber kpi-link">
-        <div class="kpi-label">Items in Inventory</div>
-        <div class="kpi-value"><?php echo $available; ?></div>
+        <div class="kpi-label">Total Items in Inventory</div>
+        <div class="kpi-value"><?php echo $totalQty; ?> Units</div>
         <div class="kpi-hint">View Inventory List -></div>
     </a>
     <button type="button" class="kpi-card green scan-link" onclick="openScanModal()">
