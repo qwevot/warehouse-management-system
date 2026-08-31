@@ -62,12 +62,12 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
 
 <div class="kpi-grid">
     <a href="<?php echo BASE_URL; ?>/pages/brand.php" class="kpi-card blue kpi-link">
-        <div class="kpi-label">Brands in Use</div>
+        <div class="kpi-label">Active Brands</div>
         <div class="kpi-value"><?php echo $brandsInUse; ?> Brands</div>
         <div class="kpi-hint">View Brands -></div>
     </a>
     <a href="<?php echo BASE_URL; ?>/pages/index.php" class="kpi-card red kpi-link">
-        <div class="kpi-label">Items in Use</div>
+        <div class="kpi-label">Active Items</div>
         <div class="kpi-value"><?php echo $itemsInUse; ?> Items</div>
         <div class="kpi-hint">View Items -></div>
     </a>
