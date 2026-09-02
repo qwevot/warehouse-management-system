@@ -123,8 +123,23 @@
 
     function collectFilters() {
         const f = {};
-        for (const a of ["brand", "shelf", "row", "col"]) f[a] = new Set(axisFilters[a]);
+        for (const a of ["brand", "shelf", "row", "col", "created"]) f[a] = new Set(axisFilters[a]);
         return f;
+    }
+
+    // The date buckets a given UNIX timestamp belongs to. A row always matches
+    // 'all'; recent rows also match one or more specific ranges so selecting a
+    // combination acts as a union (e.g. Today + Past Week).
+    function createdBuckets(ts) {
+        const t = parseInt(ts, 10);
+        if (!t) return ['all'];
+        const now = new Date();
+        const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 1000;
+        const out = ['all'];
+        if (t >= start) out.push('today');
+        if (t >= start - 6 * 86400) out.push('week');
+        if (t >= start - 29 * 86400) out.push('month');
+        return out;
     }
 
     // A row is shown when it matches every selected group; within a group the
@@ -137,11 +152,16 @@
             const ok = g === "brand" ? set.has(tr.dataset.brand) : set.has(parts[axisIdx[g]]);
             if (!ok) return false;
         }
+        const dset = filters.created;
+        if (dset.size > 0) {
+            const buckets = createdBuckets(tr.dataset.created);
+            if (!buckets.some((b) => dset.has(b))) return false;
+        }
         return true;
     }
 
     function updateFilterBadge() {
-        const n = ["brand", "shelf", "row", "col"].reduce((sum, a) => sum + axisFilters[a].size, 0);
+        const n = ["brand", "shelf", "row", "col", "created"].reduce((sum, a) => sum + axisFilters[a].size, 0);
         const badge = $("#filterBadge");
         if (badge) {
             badge.style.display = n ? "inline-flex" : "none";
@@ -170,7 +190,7 @@
     let PAGE_SIZE = DEFAULT_PAGE_SIZE;
     let currentPage = 1;
 
-    const axisFilters = { brand: new Set(), shelf: new Set(), row: new Set(), col: new Set() };
+    const axisFilters = { brand: new Set(), shelf: new Set(), row: new Set(), col: new Set(), created: new Set() };
 
     function renderInventory(resetPage) {
         const searchInput = $("#searchInput");
@@ -457,7 +477,10 @@
     function renderChips() {
         $all(".axis-chips").forEach((chips) => {
             const axis = chips.dataset.chips;
+            const dateRow = chips.querySelector(".axis-date-row");
             chips.innerHTML = "";
+            if (dateRow) chips.appendChild(dateRow); // keep the fixed date toggles
+            if (axis === "created") return; // date state is shown by the toggle buttons
             [...axisFilters[axis]].sort().forEach((v) => {
                 const c = document.createElement("button");
                 c.type = "button";
@@ -466,6 +489,9 @@
                 c.onclick = () => { axisFilters[axis].delete(v); renderChips(); filterInventory(); };
                 chips.appendChild(c);
             });
+        });
+        $all(".axis-date").forEach((b) => {
+            b.classList.toggle("active", axisFilters.created.has(b.dataset.value));
         });
     }
 
@@ -504,11 +530,40 @@
             });
         });
 
+        // Date filter: fixed toggle chips for Today / Past Week / Past Month /
+        // All. Clicking a chip toggles that bucket in the created filter set.
+        const createdWrap = document.querySelector('.axis-chips[data-chips="created"]');
+        if (createdWrap && !createdWrap.querySelector(".axis-date") && (window.INVENTORY || []).length) {
+            const dateOptions = [
+                { value: "today", label: "Today" },
+                { value: "week",  label: "Past Week" },
+                { value: "month", label: "Past Month" },
+                { value: "all",   label: "All" },
+            ];
+            const row = document.createElement("div");
+            row.className = "axis-date-row";
+            dateOptions.forEach((opt) => {
+                const b = document.createElement("button");
+                b.type = "button";
+                b.className = "axis-date";
+                b.dataset.value = opt.value;
+                b.textContent = opt.label;
+                b.addEventListener("click", () => {
+                    const s = axisFilters.created;
+                    if (s.has(opt.value)) s.delete(opt.value); else s.add(opt.value);
+                    renderChips();
+                    filterInventory();
+                });
+                row.appendChild(b);
+            });
+            createdWrap.insertBefore(row, createdWrap.firstChild);
+        }
+
         renderChips();
     }
 
     window.clearFilters = function () {
-        for (const a of ["brand", "shelf", "row", "col"]) axisFilters[a].clear();
+        for (const a of ["brand", "shelf", "row", "col", "created"]) axisFilters[a].clear();
         renderChips();
         filterInventory();
     };

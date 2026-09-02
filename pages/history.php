@@ -95,8 +95,24 @@ $histPagination = buildPagination('hist', ['pageSize' => 10]);
             'note'        => $m['note'] ?? '',
             'modified_by' => $m['modified_by'] ?? '',
             'created_at'  => $m['created_at'] ? date('Y-m-d H:i', strtotime($m['created_at'])) : '',
+            'created_ts'  => $m['created_at'] ? (int)strtotime($m['created_at']) : 0,
         ];
     }, $movements)); ?>;
+
+    // Buckets a timestamp into the date-filter groups a row belongs to
+    // (a row always belongs to 'all'; recent rows also match more specific
+    // ranges, so selecting any combination works as a union).
+    function histDateBuckets(ts) {
+        const t = parseInt(ts, 10);
+        if (!t) return ['all'];
+        const now = new Date();
+        const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 1000;
+        const out = ['all'];
+        if (t >= start) out.push('today');
+        if (t >= start - 6 * 86400) out.push('week');
+        if (t >= start - 29 * 86400) out.push('month');
+        return out;
+    }
 
     document.addEventListener("DOMContentLoaded", function () {
         initDataTable({
@@ -134,6 +150,18 @@ $histPagination = buildPagination('hist', ['pageSize' => 10]);
                         { value: 'in',       label: 'INBOUND' },
                         { value: 'out',      label: 'OUTBOUND' },
                         { value: 'transfer', label: 'TRANSFER' },
+                    ],
+                },
+                {
+                    title: 'Date',
+                    key: 'created',
+                    value: (tr) => histDateBuckets(tr.dataset.created),
+                    dataValue: (r) => histDateBuckets(r.created_ts),
+                    options: [
+                        { value: 'today', label: 'Today' },
+                        { value: 'week',  label: 'Past Week' },
+                        { value: 'month', label: 'Past Month' },
+                        { value: 'all',   label: 'All' },
                     ],
                 },
             ],

@@ -96,7 +96,7 @@ img {
 
 .sidebar {
     width: 224px;
-    background: var(--blue-dark);
+    background: linear-gradient(var(--blue), var(--blue-dark));
     color: var(--ink);
     padding: 22px 14px;
     position: fixed;
@@ -161,7 +161,7 @@ body.sidebar-collapsed .main {
 .nav-item.active {
     background: var(--blue);
     color: #ffffff;
-    box-shadow: 0 4px 10px rgba(37, 99, 235, 0.35);
+    box-shadow: 0 4px 10px rgba(9, 37, 97, 0.4);
 }
 
 .nav-group-toggle {
@@ -230,7 +230,7 @@ body.sidebar-collapsed .main {
 
 .topbar {
     height: 64px;
-    background: var(--blue-dark);
+    background: var(--blue);
     color: #ffffff;
     display: flex;
     align-items: center;
@@ -895,6 +895,35 @@ body.split-mode tr.inventory-row:has(.row-select:checked) td {
 
 .axis-chip:hover {
     background: var(--blue);
+    color: #ffffff;
+}
+
+.axis-date-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.axis-date {
+    border: 1px solid var(--border);
+    background: #ffffff;
+    color: var(--text);
+    border-radius: 999px;
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.axis-date:hover {
+    border-color: var(--blue);
+    color: var(--blue-dark);
+}
+
+.axis-date.active {
+    background: var(--blue);
+    border-color: var(--blue);
     color: #ffffff;
 }
 
@@ -1704,7 +1733,7 @@ th.action-col {
 ============================================================ */
 
 .login-body {
-    background: var(--bg);
+    background: linear-gradient(rgba(255, 255, 255, 0.6), rgba(7, 24, 255, 0.6)), url('../img/login-bg.webp') center / cover no-repeat fixed;
     min-height: 100vh;
     display: flex;
     align-items: center;

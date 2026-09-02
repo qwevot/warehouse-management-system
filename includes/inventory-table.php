@@ -49,6 +49,10 @@ $axisPanelHtml = '
     <input type="text" class="axis-input" data-axis="col" placeholder="Search used columns...">
     <div class="axis-chips" data-chips="col"></div>
 </div>
+<div class="filter-group">
+    <div class="filter-group-title">Date</div>
+    <div class="axis-chips" data-chips="created"></div>
+</div>
 <div class="filter-panel-footer">
     <button type="button" class="btn sm secondary" onclick="clearFilters()">Clear</button>
 </div>';
@@ -120,6 +124,7 @@ $inventoryPagination = buildPagination('', [
                         data-status="<?php echo e($item['status']); ?>"
                         data-brand="<?php echo e($item['brand']); ?>"
                         data-loc="<?php echo e($item['location']); ?>"
+                        data-created="<?php echo (int)strtotime((string)$item['created_at']); ?>"
                     >
                         <?php if ($rowSelectable): ?>
                             <td class="merge-check-col" data-label="">

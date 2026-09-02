@@ -190,6 +190,7 @@ function inventory_item_payload(array $item): array
         'photo'      => $item['photo'] ? BASE_URL . '/' . $item['photo'] : '',
         'status'     => $item['status'],
         'created_at' => $item['created_at'] ? date('Y-m-d H:i', strtotime($item['created_at'])) : '',
+        'created_ts' => $item['created_at'] ? (int)strtotime($item['created_at']) : 0,
     ];
 }
 
@@ -241,7 +242,7 @@ function render_inventory_rows(array $rows, string $mode, int $startIndex = 0): 
     foreach ($rows as $i => $item) {
         $no = $startIndex + $i + 1;
 
-        $html .= '<tr class="inventory-row" data-id="' . (int)$item['id'] . '" data-status="' . e($item['status']) . '" data-brand="' . e($item['brand']) . '" data-loc="' . e($item['location']) . '">';
+        $html .= '<tr class="inventory-row" data-id="' . (int)$item['id'] . '" data-status="' . e($item['status']) . '" data-brand="' . e($item['brand']) . '" data-loc="' . e($item['location']) . '" data-created="' . (int)strtotime((string)$item['created_at']) . '">';
 
         if ($selectable) {
             $html .= '<td class="merge-check-col" data-label=""><input type="checkbox" class="row-select" value="' . (int)$item['id'] . '"></td>';

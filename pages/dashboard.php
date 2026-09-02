@@ -18,21 +18,20 @@ try {
 
     // KPI counts (active = not deleted).
     $stmt = $pdo->query("
-    SELECT COALESCE(SUM(quantity), 0) 
-    FROM inventory_list 
-    WHERE deleted_at IS NULL AND status = 'available'
-");
+        SELECT COALESCE(SUM(quantity), 0) 
+        FROM inventory_list 
+        WHERE deleted_at IS NULL
+    ");
 
     $totalQty    = (int)$stmt->fetchColumn();
-    $available   = (int)$pdo->query("SELECT COUNT(*) FROM inventory_list WHERE deleted_at IS NULL AND status = 'available'")->fetchColumn();
     $brandsInUse = (int)$pdo->query("SELECT COUNT(DISTINCT brand) FROM inventory_list WHERE deleted_at IS NULL AND brand IS NOT NULL AND brand <> ''")->fetchColumn();
     $itemsInUse  = (int)$pdo->query("SELECT COUNT(DISTINCT name) FROM inventory_list WHERE deleted_at IS NULL")->fetchColumn();
 
     // Items for the quick search (feeds window.STOCK_ITEMS).
     $items = $pdo->query("SELECT id, name, brand, serial, quantity, location, barcode, qr, status, photo FROM inventory_list WHERE deleted_at IS NULL ORDER BY name ASC")->fetchAll();
 
-    // Recent activity (all movements; paginated client-side).
-    $movements = fetch_movements($pdo);
+    // Recent activity (limited to latest 30 movements for performance).
+    $movements = fetch_movements($pdo, 30);
 } catch (Exception $e) {
     $dbError = 'Could not load dashboard data from the database.';
 }
@@ -66,7 +65,7 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
         <div class="kpi-value"><?php echo $brandsInUse; ?> Brands</div>
         <div class="kpi-hint">View Brands -></div>
     </a>
-    <a href="<?php echo BASE_URL; ?>/pages/index.php" class="kpi-card blue kpi-link">
+    <a href="<?php echo BASE_URL; ?>/pages/items.php" class="kpi-card blue kpi-link">
         <div class="kpi-label">Active Items</div>
         <div class="kpi-value"><?php echo $itemsInUse; ?> Items</div>
         <div class="kpi-hint">View Items -></div>
@@ -103,13 +102,14 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
                     <th>Item</th>
                     <th>Qty</th>
                     <th>Issued To</th>
+                    <th>User</th>
                     <th>Note</th>
                     <th>Date</th>
                 </tr>
             </thead>
             <tbody id="moveBody">
                 <?php if (empty($movements)): ?>
-                    <tr><td colspan="7" style="text-align:center; color:#9ca3af; padding:40px;">No activity yet.</td></tr>
+                    <tr><td colspan="8" style="text-align:center; color:#9ca3af; padding:40px;">No activity yet.</td></tr>
                 <?php else: ?>
                     <?php foreach ($movements as $i => $m): ?>
                         <tr class="move-row" data-type="<?php echo e($m['type']); ?>" data-created="<?php echo strtotime($m['created_at']); ?>">
@@ -122,6 +122,7 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
                             <td><?php echo $m['item_name'] ? e($m['item_name']) : ('Item #' . (int)$m['item_id']); ?></td>
                             <td><?php echo movement_qty($m['type'], $m['quantity']); ?></td>
                             <td><?php echo dash($m['issued_to'] ?? null); ?></td>
+                            <td><?php echo dash($m['modified_by'] ?? null); ?></td>
                             <td><?php echo dash($m['note'] ?? null); ?></td>
                             <td class="registered-on"><?php echo e(fmt_datetime($m['created_at'])); ?></td>
                         </tr>
@@ -156,8 +157,24 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
             'note'        => $m['note'] ?? '',
             'modified_by' => $m['modified_by'] ?? '',
             'created_at'  => $m['created_at'] ? date('Y-m-d H:i', strtotime($m['created_at'])) : '',
+            'created_ts'  => $m['created_at'] ? (int)strtotime($m['created_at']) : 0,
         ];
     }, $movements)); ?>;
+
+    // Buckets a timestamp into the date-filter groups a row belongs to
+    // (a row always belongs to 'all'; recent rows also match more specific
+    // ranges, so selecting any combination works as a union).
+    function moveDateBuckets(ts) {
+        const t = parseInt(ts, 10);
+        if (!t) return ['all'];
+        const now = new Date();
+        const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 1000;
+        const out = ['all'];
+        if (t >= start) out.push('today');
+        if (t >= start - 6 * 86400) out.push('week');
+        if (t >= start - 29 * 86400) out.push('month');
+        return out;
+    }
 
     document.addEventListener("DOMContentLoaded", function () {
         initDataTable({
@@ -178,12 +195,13 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
             exportFn:       'moveExport',
             exportName:     'recent-activity',
             exportCols: [
-                { key: 'type',       label: 'Type' },
-                { key: 'item_name',  label: 'Item' },
-                { key: 'quantity',   label: 'Quantity' },
-                { key: 'issued_to',  label: 'Issued To' },
-                { key: 'note',       label: 'Note' },
-                { key: 'created_at', label: 'Date' },
+                { key: 'type',        label: 'Type' },
+                { key: 'item_name',   label: 'Item' },
+                { key: 'quantity',    label: 'Quantity' },
+                { key: 'issued_to',   label: 'Issued To' },
+                { key: 'modified_by', label: 'User' },
+                { key: 'note',        label: 'Note' },
+                { key: 'created_at',  label: 'Date' },
             ],
             filterGroups: [
                 {
@@ -194,6 +212,18 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
                         { value: 'in',       label: 'INBOUND' },
                         { value: 'out',      label: 'OUTBOUND' },
                         { value: 'transfer', label: 'TRANSFER' },
+                    ],
+                },
+                {
+                    title: 'Date',
+                    key: 'created',
+                    value: (tr) => moveDateBuckets(tr.dataset.created),
+                    dataValue: (r) => moveDateBuckets(r.created_ts),
+                    options: [
+                        { value: 'today', label: 'Today' },
+                        { value: 'week',  label: 'Past Week' },
+                        { value: 'month', label: 'Past Month' },
+                        { value: 'all',   label: 'All' },
                     ],
                 },
             ],

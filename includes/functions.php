@@ -257,14 +257,18 @@ function create_inventory_item(PDO $pdo, array $fields, ?string $serial = null, 
 
 // Shared stock-movement helpers used by the dashboard and history views.
 
-function fetch_movements(PDO $pdo): array
+function fetch_movements(PDO $pdo, ?int $limit = null): array
 {
-    return $pdo->query(
-        "SELECT m.*, COALESCE(i.name, '') AS item_name
-         FROM stock_movements m
-         LEFT JOIN inventory_list i ON i.id = m.item_id
-         ORDER BY m.created_at DESC, m.id DESC"
-    )->fetchAll();
+    $sql = "SELECT m.*, COALESCE(i.name, '') AS item_name
+            FROM stock_movements m
+            LEFT JOIN inventory_list i ON i.id = m.item_id
+            ORDER BY m.created_at DESC, m.id DESC";
+
+    if ($limit !== null && $limit > 0) {
+        $sql .= " LIMIT " . (int)$limit;
+    }
+
+    return $pdo->query($sql)->fetchAll();
 }
 
 // Active inventory rows, shared by the Stock In / Stock Out / Transfers pages.
