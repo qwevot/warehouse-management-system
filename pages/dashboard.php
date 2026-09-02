@@ -66,12 +66,12 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
         <div class="kpi-value"><?php echo $brandsInUse; ?> Brands</div>
         <div class="kpi-hint">View Brands -></div>
     </a>
-    <a href="<?php echo BASE_URL; ?>/pages/index.php" class="kpi-card red kpi-link">
+    <a href="<?php echo BASE_URL; ?>/pages/index.php" class="kpi-card blue kpi-link">
         <div class="kpi-label">Active Items</div>
         <div class="kpi-value"><?php echo $itemsInUse; ?> Items</div>
         <div class="kpi-hint">View Items -></div>
     </a>
-    <a href="<?php echo BASE_URL; ?>/pages/index.php" class="kpi-card amber kpi-link">
+    <a href="<?php echo BASE_URL; ?>/pages/index.php" class="kpi-card blue kpi-link">
         <div class="kpi-label">Total Items in Inventory</div>
         <div class="kpi-value"><?php echo $totalQty; ?> Units</div>
         <div class="kpi-hint">View Inventory List -></div>
@@ -112,7 +112,7 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
                     <tr><td colspan="7" style="text-align:center; color:#9ca3af; padding:40px;">No activity yet.</td></tr>
                 <?php else: ?>
                     <?php foreach ($movements as $i => $m): ?>
-                        <tr class="move-row" data-created="<?php echo strtotime($m['created_at']); ?>">
+                        <tr class="move-row" data-type="<?php echo e($m['type']); ?>" data-created="<?php echo strtotime($m['created_at']); ?>">
                             <td class="no-col"><?php echo $i + 1; ?></td>
                             <td>
                                 <span class="status <?php echo e(movement_status_class($m['type'])); ?>">
@@ -185,7 +185,18 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
                 { key: 'note',       label: 'Note' },
                 { key: 'created_at', label: 'Date' },
             ],
-            filterGroups: [],
+            filterGroups: [
+                {
+                    title: 'Type',
+                    key: 'type',
+                    dataValue: (r) => r.type,
+                    options: [
+                        { value: 'in',       label: 'INBOUND' },
+                        { value: 'out',      label: 'OUTBOUND' },
+                        { value: 'transfer', label: 'TRANSFER' },
+                    ],
+                },
+            ],
             sorters: {
                 'newest': function (a, b) { return (parseInt(b.dataset.created, 10) || 0) - (parseInt(a.dataset.created, 10) || 0); },
                 'oldest': function (a, b) { return (parseInt(a.dataset.created, 10) || 0) - (parseInt(b.dataset.created, 10) || 0); },

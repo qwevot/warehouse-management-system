@@ -72,6 +72,10 @@ $inventoryPagination = buildPagination('', [
 ?>
 <?php echo $inventoryToolbar; ?>
 
+<div id="selectionBanner" class="selection-banner" style="display:none;">
+    <span id="selectionBannerText" class="banner-text"></span>
+</div>
+
 <div class="table-container">
 
     <table class="inventory-table">

@@ -4,7 +4,7 @@ require_once __DIR__ . '/../includes/auth.php';
 require_login();
 require_role('super admin');
 
-$pdo = html_db('adjustments');
+$pdo = html_db('users');
 
 $id       = (int)($_POST['id'] ?? 0);
 $username = trim($_POST['username'] ?? '');
@@ -13,25 +13,25 @@ $role     = trim($_POST['role'] ?? '');
 $password = $_POST['password'] ?? '';
 
 if ($username === '') {
-    redirect_to('adjustments', 'error', 'Username is required.');
+    redirect_to('users', 'error', 'Username is required.');
 }
 
 if (!in_array($role, available_roles(), true)) {
-    redirect_to('adjustments', 'error', 'Please choose a valid role.');
+    redirect_to('users', 'error', 'Please choose a valid role.');
 }
 
 $currentUserId = (int)(current_user()['id'] ?? 0);
 
 // A super admin cannot demote their own account (avoids locking everyone out).
 if ($id === $currentUserId && $role !== 'super admin') {
-    redirect_to('adjustments', 'error', 'You cannot change your own role.');
+    redirect_to('users', 'error', 'You cannot change your own role.');
 }
 
 // Guard against duplicate usernames (case-insensitive), excluding self.
 $st = $pdo->prepare('SELECT id FROM users WHERE LOWER(username) = LOWER(?) AND id <> ?');
 $st->execute([$username, $id]);
 if ($st->fetch()) {
-    redirect_to('adjustments', 'error', 'That username already exists.');
+    redirect_to('users', 'error', 'That username already exists.');
 }
 
 $fullName = $fullName !== '' ? $fullName : null;
@@ -44,14 +44,14 @@ if ($id > 0) {
         $pdo->prepare('UPDATE users SET username = ?, full_name = ?, role = ? WHERE id = ?')
             ->execute([$username, $fullName, $role, $id]);
     }
-    redirect_to('adjustments', 'added', 'User "' . $username . '" updated.');
+    redirect_to('users', 'added', 'User "' . $username . '" updated.');
 }
 
 if ($password === '') {
-    redirect_to('adjustments', 'error', 'A password is required for a new user.');
+    redirect_to('users', 'error', 'A password is required for a new user.');
 }
 
 $pdo->prepare('INSERT INTO users (username, full_name, role, password_hash) VALUES (?, ?, ?, ?)')
     ->execute([$username, $fullName, $role, password_hash($password, PASSWORD_DEFAULT)]);
 
-redirect_to('adjustments', 'added', 'User "' . $username . '" added.');
+redirect_to('users', 'added', 'User "' . $username . '" added.');

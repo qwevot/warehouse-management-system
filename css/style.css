@@ -524,14 +524,11 @@ body.split-mode tr.inventory-row:has(.row-select:checked) td {
 }
 
 .sticky-zone {
-    position: sticky;
-    top: 64px;
-    z-index: 30;
+    position: relative;
+    z-index: 1;
     background: var(--surface);
 }
 
-/* A section that hosts a sticky zone must let it stick against the viewport;
-   overflow:hidden would offset it and push the toolbar below down. */
 .inventory-section:has(.sticky-zone) {
     overflow: visible;
 }
@@ -2284,4 +2281,125 @@ button,
     text-transform: uppercase;
     letter-spacing: 0.5px;
     margin: 16px 0 12px;
+}
+
+/* Split Item Redesigned Part Rows */
+.split-parts-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 14px;
+}
+
+.split-part-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: var(--surface-soft, #f8fafc);
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 6px;
+    padding: 8px 14px;
+    width: fit-content;
+    max-width: 100%;
+}
+
+.split-part-row .part-badge {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--ink);
+    min-width: 50px;
+}
+
+.split-part-row .field {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.split-part-row .field label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+    margin: 0;
+}
+
+.split-part-row .field.qty-field {
+    width: 76px;
+}
+
+.split-part-row .field.qty-field input {
+    width: 100%;
+    height: 32px;
+    text-align: center;
+    font-size: 12.5px;
+    padding: 0 6px;
+    margin: 0;
+}
+
+.split-part-row .field.loc-field {
+    width: 180px;
+}
+
+.split-part-row .field.loc-field input {
+    width: 100%;
+    height: 32px;
+    font-size: 12.5px;
+    padding: 0 10px;
+    margin: 0;
+}
+
+@media (max-width: 480px) {
+    .split-part-row {
+        flex-wrap: wrap;
+        width: 100%;
+    }
+}
+
+/* Selection Guidance Banner & Row Highlighting */
+.selection-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--blue-soft);
+    border: 1px solid var(--blue-line);
+    border-radius: 6px;
+    padding: 10px 16px;
+    margin-bottom: 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--blue-dark);
+}
+
+.selection-banner .banner-icon {
+    font-size: 16px;
+}
+
+body.split-mode tr.inventory-row,
+body.merge-mode tr.inventory-row {
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+body.split-mode tr.inventory-row:hover,
+body.merge-mode tr.inventory-row:hover {
+    background: #f1f5f9;
+}
+
+body.merge-mode tr.inventory-row.selected,
+body.split-mode tr.inventory-row.selected {
+    background: #eff6ff !important;
+    border-left: 4px solid var(--blue) !important;
+}
+
+body.merge-mode tr.inventory-row.selected td,
+body.split-mode tr.inventory-row.selected td {
+    background: #eff6ff !important;
+}
+
+.merge-check-col input[type="radio"],
+.merge-check-col input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+    accent-color: var(--blue);
 }

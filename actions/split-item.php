@@ -24,20 +24,26 @@ if (min($quantities) < 1) {
     json_fail('Each part quantity must be at least 1.');
 }
 
-$rawLoc = $_POST['locations'] ?? [];
-if (!is_array($rawLoc)) {
-    $rawLoc = explode('||', (string)$rawLoc);
-}
-$locations = array_values(array_filter(array_map('trim', $rawLoc)));
-
-if (count($locations) !== count($quantities)) {
-    json_fail('You must provide a location for every part.');
-}
-
 $item = find_item($pdo, $itemId);
 
 if ($item === null || $item['deleted_at'] !== null) {
     json_fail('Item not found.');
+}
+
+$rawLoc = $_POST['locations'] ?? [];
+if (is_string($rawLoc)) {
+    $rawLoc = (strpos($rawLoc, '||') !== false) ? explode('||', $rawLoc) : explode(',', $rawLoc);
+}
+if (!is_array($rawLoc)) {
+    $rawLoc = [];
+}
+$parsedLocations = array_map('trim', $rawLoc);
+
+$defaultLoc = trim($item['location'] ?? '') !== '' ? trim($item['location']) : 'N/A';
+$locations = [];
+for ($i = 0; $i < count($quantities); $i++) {
+    $loc = $parsedLocations[$i] ?? '';
+    $locations[] = ($loc !== '') ? $loc : $defaultLoc;
 }
 
 $qty = max(0, (int)$item['quantity']);

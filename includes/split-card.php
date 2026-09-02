@@ -6,25 +6,18 @@
 
     <div class="wizard-body">
 
-        <div class="form-grid">
+        <div class="form-grid" style="align-items: center;">
 
-            <div class="field" style="max-width:120px;">
+            <div class="field" style="max-width:140px;">
                 <label for="splitParts">Number of parts</label>
                 <input type="number" id="splitParts" min="2" max="10" value="2" onkeydown="return false" oninput="renderSplitQtyInputs()">
             </div>
 
+            <div class="merge-hint" id="splitQtySum" style="align-self: flex-end; margin-bottom: 8px; font-weight: 600;"></div>
+
         </div>
 
-        <div style="margin-top:14px;">
-            <label style="font-size:11px;font-weight:600;color:var(--text);display:block;margin-bottom:6px;">Part quantities</label>
-            <div class="split-qty-grid" id="splitQtyInputs"></div>
-            <div class="merge-hint" id="splitQtySum" style="margin-top:6px;"></div>
-        </div>
-
-        <div style="margin-top:14px;">
-            <label style="font-size:11px;font-weight:600;color:var(--text);display:block;margin-bottom:6px;">Part locations</label>
-            <div class="split-qty-grid split-loc-grid" id="splitLocationInputs"></div>
-        </div>
+        <div class="split-parts-container" id="splitPartsContainer"></div>
 
         <div class="merge-actions" style="margin-top:16px;">
             <span class="merge-hint">Select one item from the table below. Quantities must add up to its current stock.</span>

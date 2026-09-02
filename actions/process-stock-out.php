@@ -14,23 +14,40 @@ if ($itemId <= 0)     redirect_to('stock-out', 'error', 'Please select an item.'
 if ($qty <= 0)        redirect_to('stock-out', 'error', 'Quantity must be at least 1.');
 if ($issuedTo === '') redirect_to('stock-out', 'error', 'Issued To is required.');
 
-$item = find_item($pdo, $itemId);
-if ($item === null || $item['deleted_at'] !== null) {
-    redirect_to('stock-out', 'error', 'Item not found.');
+try {
+    $pdo->beginTransaction();
+
+    $st = $pdo->prepare('SELECT name, quantity, deleted_at FROM inventory_list WHERE id = ? FOR UPDATE');
+    $st->execute([$itemId]);
+    $item = $st->fetch();
+
+    if ($item === false || $item['deleted_at'] !== null) {
+        $pdo->rollBack();
+        redirect_to('stock-out', 'error', 'Item not found.');
+    }
+
+    $onHand = (int)$item['quantity'];
+    if ($qty > $onHand) {
+        $pdo->rollBack();
+        redirect_to('stock-out', 'error', 'Cannot issue more than the on-hand quantity (' . $onHand . ').');
+    }
+
+    $modifiedBy = current_user_name();
+
+    // Decrease the item's on-hand quantity.
+    $pdo->prepare('UPDATE inventory_list SET quantity = quantity - ?, updated_at = NOW(), modified_by = ? WHERE id = ?')
+        ->execute([$qty, $modifiedBy, $itemId]);
+
+    // Record the movement.
+    $pdo->prepare('INSERT INTO stock_movements (item_id, type, quantity, issued_to, note, modified_by) VALUES (?, ?, ?, ?, ?, ?)')
+        ->execute([$itemId, 'out', $qty, $issuedTo, $note, $modifiedBy]);
+
+    $pdo->commit();
+    redirect_to('stock-out', 'added', $qty . ' unit(s) issued from "' . $item['name'] . '".');
+} catch (Exception $e) {
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+    redirect_to('stock-out', 'error', 'Stock-out operation failed.');
 }
 
-$modifiedBy = current_user_name();
-
-$onHand = (int)$item['quantity'];
-if ($qty > $onHand) {
-    redirect_to('stock-out', 'error', 'Cannot issue more than the on-hand quantity (' . $onHand . ').');
-}
-
-// Decrease the item's on-hand quantity.
-$pdo->prepare('UPDATE inventory_list SET quantity = quantity - ?, updated_at = NOW(), modified_by = ? WHERE id = ?')->execute([$qty, $modifiedBy, $itemId]);
-
-// Record the movement.
-$pdo->prepare('INSERT INTO stock_movements (item_id, type, quantity, issued_to, note, modified_by) VALUES (?, ?, ?, ?, ?, ?)')
-    ->execute([$itemId, 'out', $qty, $issuedTo, $note, $modifiedBy]);
-
-redirect_to('stock-out', 'added', $qty . ' unit(s) issued from "' . $item['name'] . '".');

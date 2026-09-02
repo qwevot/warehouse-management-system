@@ -179,14 +179,18 @@
         if (resetPage) currentPage = 1;
 
         const query = searchInput.value.toLowerCase();
-        const sort = $("#sortSelect").value;
+        const sort = $("#sortSelect") ? $("#sortSelect").value : "newest";
         const filters = collectFilters();
         updateFilterBadge();
 
-        let rows = $all(".inventory-row").filter((tr) => {
+        const allInvRows = $all(".inventory-row");
+        let rows = allInvRows.filter((tr) => {
+            if (tr._searchText === undefined) {
+                tr._searchText = tr.textContent.toLowerCase();
+            }
             const parts = (tr.dataset.loc || "").split("-");
             return (
-                tr.innerText.toLowerCase().includes(query) &&
+                tr._searchText.includes(query) &&
                 rowMatches(tr, parts, filters)
             );
         });
@@ -201,7 +205,9 @@
         const start = (currentPage - 1) * PAGE_SIZE;
         const pageRows = rows.slice(start, start + PAGE_SIZE);
 
-        $all(".inventory-row").forEach((tr) => (tr.style.display = "none"));
+        allInvRows.forEach((tr) => {
+            if (tr.style.display !== "none") tr.style.display = "none";
+        });
         pageRows.forEach((tr, i) => {
             tr.style.display = "";
             const cell = tr.querySelector(".no-col");
@@ -1001,6 +1007,53 @@
     // Split and Merge can't be active at the same time; opening one closes
     // the other. Both use the same checkbox column in the table.
 
+    function updateSelectionUI() {
+        const isSplit = document.body.classList.contains("split-mode");
+        const isMerge = document.body.classList.contains("merge-mode");
+        const banner = $("#selectionBanner");
+        const bannerText = $("#selectionBannerText");
+
+        $all(".inventory-row").forEach((tr) => {
+            const cb = tr.querySelector(".row-select");
+            if (cb) {
+                if (isSplit) {
+                    cb.type = "radio";
+                    cb.name = "splitRowSelect";
+                } else if (isMerge) {
+                    cb.type = "checkbox";
+                    cb.removeAttribute("name");
+                }
+                tr.classList.toggle("selected", cb.checked);
+            }
+        });
+
+        if (!banner) return;
+
+        if (isSplit) {
+            banner.style.display = "flex";
+            const checked = $all(".row-select:checked");
+            if (checked.length === 1) {
+                const id = parseInt(checked[0].value, 10);
+                const item = (window.INVENTORY || []).find((it) => it.id === id);
+                if (item) {
+                    if (bannerText) bannerText.textContent = "Selected: " + item.name + " (" + (item.serial || item.barcode || ("ID #" + item.id)) + ") — Qty: " + item.quantity + ". Ready to split.";
+                }
+            } else {
+                if (bannerText) bannerText.textContent = "Click an item in the table below to select it for splitting.";
+            }
+        } else if (isMerge) {
+            banner.style.display = "flex";
+            const checkedCount = $all(".row-select:checked").length;
+            if (checkedCount > 0) {
+                if (bannerText) bannerText.textContent = checkedCount + " item(s) selected. Ready to merge.";
+            } else {
+                if (bannerText) bannerText.textContent = "Click 2 or more items from the table below to merge.";
+            }
+        } else {
+            banner.style.display = "none";
+        }
+    }
+
     // Generic mutually-exclusive toggle helper shared by Split and Merge: each
     // flips the header button between "Cancel" and its label, shows/hides its
     // panel, clears the selection checkboxes when deactivated, and runs
@@ -1023,6 +1076,7 @@
                 if (panel) panel.style.display = "none";
                 setBtn(false);
                 clearSelection();
+                updateSelectionUI();
                 if (cfg.reset) cfg.reset();
             },
             toggle() {
@@ -1038,6 +1092,7 @@
                     clearSelection();
                     if (cfg.reset) cfg.reset();
                 }
+                updateSelectionUI();
             }
         };
     }
@@ -1098,41 +1153,49 @@
     }
 
     window.renderSplitQtyInputs = function () {
-        const wrap = $("#splitQtyInputs");
-        const locWrap = $("#splitLocationInputs");
-        if (!wrap) return;
+        const container = $("#splitPartsContainer") || $("#splitQtyInputs");
+        if (!container) return;
         const parts = Math.min(10, Math.max(2, parseInt($("#splitParts").value, 10) || 2));
-        wrap.innerHTML = "";
-        if (locWrap) locWrap.innerHTML = "";
-        for (let i = 0; i < parts; i++) {
-            const cell = document.createElement("div");
-            cell.className = "split-qty-cell";
-            const label = document.createElement("label");
-            label.textContent = "Part " + (i + 1);
-            const input = document.createElement("input");
-            input.type = "number";
-            input.min = "1";
-            input.value = equalSplitValue(i, parts);
-            input.className = "split-qty";
-            input.addEventListener("input", updateSplitQtySum);
-            cell.appendChild(label);
-            cell.appendChild(input);
-            wrap.appendChild(cell);
+        container.innerHTML = "";
 
-            if (locWrap) {
-                const locCell = document.createElement("div");
-                locCell.className = "split-qty-cell";
-                const locLabel = document.createElement("label");
-                locLabel.textContent = "Part " + (i + 1);
-                const locInput = document.createElement("input");
-                locInput.type = "text";
-                locInput.className = "split-location";
-                locInput.placeholder = "Location";
-                if (i === 0) locInput.value = splitBaseLocation;
-                locCell.appendChild(locLabel);
-                locCell.appendChild(locInput);
-                locWrap.appendChild(locCell);
-            }
+        for (let i = 0; i < parts; i++) {
+            const row = document.createElement("div");
+            row.className = "split-part-row";
+
+            const badge = document.createElement("div");
+            badge.className = "part-badge";
+            badge.textContent = "Part " + (i + 1);
+
+            const qtyField = document.createElement("div");
+            qtyField.className = "field qty-field";
+            const qtyLabel = document.createElement("label");
+            qtyLabel.textContent = "Quantity";
+            const qtyInput = document.createElement("input");
+            qtyInput.type = "number";
+            qtyInput.min = "1";
+            qtyInput.value = equalSplitValue(i, parts);
+            qtyInput.className = "split-qty";
+            qtyInput.addEventListener("input", updateSplitQtySum);
+            qtyField.appendChild(qtyLabel);
+            qtyField.appendChild(qtyInput);
+
+            const locField = document.createElement("div");
+            locField.className = "field loc-field";
+            const locLabel = document.createElement("label");
+            locLabel.textContent = "Location";
+            const locInput = document.createElement("input");
+            locInput.type = "text";
+            locInput.className = "split-location";
+            locInput.value = splitBaseLocation;
+            locInput.placeholder = "Location";
+            locField.appendChild(locLabel);
+            locField.appendChild(locInput);
+
+            row.appendChild(badge);
+            row.appendChild(qtyField);
+            row.appendChild(locField);
+
+            container.appendChild(row);
         }
         updateSplitQtySum();
     };
@@ -1151,12 +1214,10 @@
         if (quantities.some((q) => q < 1)) return alert("Each part quantity must be at least 1.");
         const sum = quantities.reduce((a, b) => a + b, 0);
         if (sum !== splitBaseQty) return alert("Part quantities must add up to the item's quantity (" + splitBaseQty + ").");
-        const locations = $all(".split-location").map((inp) => inp.value.trim());
-        if (locations.length !== quantities.length) return alert("Provide a location for every part.");
-        if (locations.some((l) => !l)) return alert("Every part must have a location.");
+        const locations = $all(".split-location").map((inp) => inp.value.trim() || splitBaseLocation);
         if (!confirm("Split this item into " + quantities.length + " parts?")) return;
 
-        post(BASE + "/actions/split-item.php", { item_id: checked[0], quantities: quantities, locations: locations })
+        post(BASE + "/actions/split-item.php", { item_id: checked[0], quantities: quantities.join(","), locations: locations.join("||") })
             .then((res) => res.json())
             .then((d) => {
                 if (!d.ok) throw new Error(d.message || "Split failed.");
@@ -1177,7 +1238,7 @@
         $("#mergeBarcodeWrap").style.display = mode === "new" ? "" : "none";
     };
 
-document.addEventListener("change", (e) => {
+    document.addEventListener("change", (e) => {
         if (e.target && e.target.classList && e.target.classList.contains("row-select")) {
             // Split takes exactly one item: checking one unchecks the rest.
             if (document.body.classList.contains("split-mode") && e.target.checked) {
@@ -1187,7 +1248,37 @@ document.addEventListener("change", (e) => {
             }
             refreshMergeTargets();
             if (document.body.classList.contains("split-mode")) refreshSplitBase();
+            updateSelectionUI();
         }
+    });
+
+    // Whole-row click target for Split and Merge modes:
+    document.addEventListener("click", (e) => {
+        const isSplit = document.body.classList.contains("split-mode");
+        const isMerge = document.body.classList.contains("merge-mode");
+        if (!isSplit && !isMerge) return;
+
+        // Don't toggle selection if the user clicked interactive controls/modals/buttons inside the row
+        if (e.target.closest("button, a, img, input, select, textarea")) return;
+
+        const tr = e.target.closest(".inventory-row");
+        if (!tr) return;
+
+        const input = tr.querySelector(".row-select");
+        if (!input) return;
+
+        if (isSplit) {
+            input.checked = true;
+            $all(".row-select").forEach((cb) => {
+                if (cb !== input) cb.checked = false;
+            });
+            refreshSplitBase();
+        } else if (isMerge) {
+            input.checked = !input.checked;
+            refreshMergeTargets();
+        }
+
+        updateSelectionUI();
     });
 
     function refreshMergeTargets() {
@@ -1428,13 +1519,24 @@ document.addEventListener("change", (e) => {
         const caseSensitive = !!cfg.caseSensitive;
 
         // ── helpers ────────────────────────────────────────────────────────────
-        function allRows() { return qa(cfg.row); }
+        let cachedRows = null;
+        function allRows() {
+            if (!cachedRows) {
+                cachedRows = qa(cfg.row);
+                cachedRows.forEach((tr) => {
+                    if (tr._searchText === undefined) {
+                        tr._searchText = caseSensitive ? tr.textContent : tr.textContent.toLowerCase();
+                    }
+                });
+            }
+            return cachedRows;
+        }
 
         function getFilterVal(group, tr) {
             const v = group.value;
             if (typeof v === "function") return v(tr);
             if (typeof v === "string") return tr.dataset[v];
-            return String(tr.innerText);
+            return String(tr.textContent);
         }
 
         function rowMatchesFilters(tr) {
@@ -1455,8 +1557,8 @@ document.addEventListener("change", (e) => {
                 return;
             }
             const getVal = (tr) => {
-                if (typeof spec === "string") return String(tr.dataset[spec] || tr.innerText);
-                return tr.innerText;
+                if (typeof spec === "string") return String(tr.dataset[spec] || tr.textContent);
+                return tr.textContent;
             };
             const numeric = (a, b) => {
                 const na = parseFloat(a), nb = parseFloat(b);
@@ -1492,13 +1594,20 @@ document.addEventListener("change", (e) => {
             filterBadge.style.display = count > 0 ? "" : "none";
         }
 
+        let renderTimer = null;
+        function debouncedRender(resetPage) {
+            if (renderTimer) clearTimeout(renderTimer);
+            renderTimer = setTimeout(() => render(resetPage), 80);
+        }
+
         function render(resetPage) {
             if (resetPage) currentPage = 1;
 
             const rawQuery = searchInput ? searchInput.value.trim() : "";
             const query = caseSensitive ? rawQuery : rawQuery.toLowerCase();
-            let rows = allRows().filter((tr) => {
-                const text = caseSensitive ? tr.innerText : tr.innerText.toLowerCase();
+            const list = allRows();
+            let rows = list.filter((tr) => {
+                const text = tr._searchText !== undefined ? tr._searchText : (caseSensitive ? tr.textContent : tr.textContent.toLowerCase());
                 return text.includes(query) && rowMatchesFilters(tr);
             });
             sortRows(rows);
@@ -1510,7 +1619,9 @@ document.addEventListener("change", (e) => {
             const start    = (currentPage - 1) * pageSize;
             const pageRows = rows.slice(start, start + pageSize);
 
-            allRows().forEach((tr) => (tr.style.display = "none"));
+            list.forEach((tr) => {
+                if (tr.style.display !== "none") tr.style.display = "none";
+            });
             pageRows.forEach((tr, i) => {
                 tr.style.display = "";
                 const cell = tr.querySelector(".no-col");
@@ -1630,7 +1741,7 @@ document.addEventListener("change", (e) => {
 
         if (cfg.exportFn) window[cfg.exportFn] = doExport;
 
-        if (searchInput) searchInput.addEventListener("input", () => render(true));
+        if (searchInput) searchInput.addEventListener("input", () => debouncedRender(true));
         if (sortSelect)  sortSelect.addEventListener("change", () => render(false));
         if (filterBtn && filterWrap) {
             filterBtn.addEventListener("click", (e) => { e.stopPropagation(); filterWrap.classList.toggle("open"); });
