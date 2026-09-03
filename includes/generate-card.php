@@ -58,9 +58,7 @@
             <button type="button" class="btn cancel" onclick="closeModal('genModal')">Cancel</button>
             <button type="button" class="btn primary" id="genGenerateBtn" onclick="generateItemLabel()">Generate Barcode & QR Code</button>
             <span id="genPrintButtons" style="display:none; margin-left:auto; display:inline-flex; gap:8px;">
-                <button type="button" class="btn upload" onclick="printScoped('barcode')">Print Barcode</button>
-                <button type="button" class="btn upload" onclick="printScoped('qr')">Print QR Code</button>
-                <button type="button" class="btn primary" onclick="printScoped('both')">Print Both</button>
+                <button type="button" class="btn primary" onclick="printScoped('both')">Print</button>
             </span>
         </div>
 

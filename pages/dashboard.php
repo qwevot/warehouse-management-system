@@ -60,28 +60,61 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
 </div>
 
 <div class="kpi-grid">
-    <a href="<?php echo BASE_URL; ?>/pages/brand.php" class="kpi-card blue kpi-link">
+    <a href="<?php echo BASE_URL; ?>/pages/brand.php" class="kpi-card kpi-link">
         <div class="kpi-label">Active Brands</div>
         <div class="kpi-value"><?php echo $brandsInUse; ?> Brands</div>
-        <div class="kpi-hint">View Brands -></div>
+        <div class="kpi-hint">View Brands &rarr;</div>
     </a>
-    <a href="<?php echo BASE_URL; ?>/pages/items.php" class="kpi-card blue kpi-link">
+    <a href="<?php echo BASE_URL; ?>/pages/items.php" class="kpi-card kpi-link">
         <div class="kpi-label">Active Items</div>
         <div class="kpi-value"><?php echo $itemsInUse; ?> Items</div>
-        <div class="kpi-hint">View Items -></div>
+        <div class="kpi-hint">View Items &rarr;</div>
     </a>
-    <a href="<?php echo BASE_URL; ?>/pages/index.php" class="kpi-card blue kpi-link">
+    <a href="<?php echo BASE_URL; ?>/pages/index.php" class="kpi-card kpi-link">
         <div class="kpi-label">Total Items in Inventory</div>
         <div class="kpi-value"><?php echo $totalQty; ?> Units</div>
-        <div class="kpi-hint">View Inventory List -></div>
+        <div class="kpi-hint">View Inventory List &rarr;</div>
     </a>
-    <button type="button" class="kpi-card green scan-link" onclick="openScanModal()">
+    <button type="button" class="kpi-card scan-link" onclick="openScanModal()">
         <div class="kpi-label">Scan Item</div>
         <div class="scan-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="28" height="28" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2"></path><path d="M17 3h2a2 2 0 0 1 2 2v2"></path><path d="M21 17v2a2 2 0 0 1-2 2h-2"></path><path d="M7 21H5a2 2 0 0 1-2-2v-2"></path><line x1="7" y1="12" x2="17" y2="12"></line></svg>
         </div>
         <div class="kpi-hint">Scan an item to view details</div>
     </button>
+</div>
+
+<div class="quick-actions-grid">
+    <a href="<?php echo BASE_URL; ?>/pages/stock-in.php" class="quick-action-card blue">
+        <div class="quick-action-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+        </div>
+        <div class="quick-action-content">
+            <div class="quick-action-title">Stock In</div>
+            <div class="quick-action-desc">Receive incoming items &amp; replenish stock</div>
+        </div>
+        <div class="quick-action-arrow">&rarr;</div>
+    </a>
+    <a href="<?php echo BASE_URL; ?>/pages/stock-out.php" class="quick-action-card red">
+        <div class="quick-action-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
+        </div>
+        <div class="quick-action-content">
+            <div class="quick-action-title">Stock Out</div>
+            <div class="quick-action-desc">Issue, dispatch, or record outgoing items</div>
+        </div>
+        <div class="quick-action-arrow">&rarr;</div>
+    </a>
+    <a href="<?php echo BASE_URL; ?>/pages/transfers.php" class="quick-action-card yellow">
+        <div class="quick-action-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16V4m0 0L3 8m4-4l4 4m6 4v12m0 0l4-4m-4 4l-4-4"/></svg>
+        </div>
+        <div class="quick-action-content">
+            <div class="quick-action-title">Transfers</div>
+            <div class="quick-action-desc">Relocate items across shelves &amp; rows</div>
+        </div>
+        <div class="quick-action-arrow">&rarr;</div>
+    </a>
 </div>
 
 <?php include __DIR__ . '/../includes/item-card-select.php'; ?>

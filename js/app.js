@@ -24,7 +24,7 @@
             loaderTimer = setTimeout(() => {
                 loaderTimer = null;
                 if (loaderPending > 0) loader.classList.add("active");
-            }, 120);
+            }, 300);
         }
     }
 
@@ -41,29 +41,6 @@
 
     window.showLoader = showLoader;
     window.hideLoader = hideLoader;
-
-    // Buffer every fetch so all AJAX work (scan lookup, delete, split, merge,
-    // import, stock in/out, transfers, label generation) reports through here.
-    const originalFetch = window.fetch;
-    window.fetch = function (...args) {
-        showLoader();
-        return originalFetch.apply(this, args).finally(hideLoader);
-    };
-
-    // Reveal the overlay as soon as the user navigates (link click or form
-    // submit). The overlay is torn down with the old page, so there is no need
-    // to hide it here — pageshow only covers bfcache/soft reload cases.
-    document.addEventListener("click", (e) => {
-        if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-        const a = e.target.closest && e.target.closest("a[href]");
-        if (!a) return;
-        const href = a.getAttribute("href") || "";
-        if (!href || href.startsWith("#") || a.target === "_blank" || a.hasAttribute("download")) return;
-        showLoader(true);
-    });
-
-    document.addEventListener("submit", () => showLoader(true), true);
-
     window.addEventListener("pageshow", hideLoader);
 
     function post(url, data) {
@@ -994,10 +971,25 @@
 
 
     // Collapsible sidebar groups: clicking the toggle opens/closes the children.
-    // Collapse/expand the whole sidebar (icons-only vs full labels).
+    // Desktop: toggles .sidebar-collapsed | Mobile: toggles .sidebar-open
     window.toggleSidebar = function () {
-        document.body.classList.toggle("sidebar-collapsed");
+        if (window.innerWidth <= 768) {
+            document.body.classList.toggle("sidebar-open");
+        } else {
+            document.body.classList.toggle("sidebar-collapsed");
+        }
     };
+
+    // Close mobile sidebar when clicking outside or clicking any navigation link
+    document.addEventListener("click", (e) => {
+        if (window.innerWidth <= 768 && document.body.classList.contains("sidebar-open")) {
+            const sidebar = document.querySelector(".sidebar");
+            const toggleBtn = document.querySelector(".sidebar-toggle");
+            if (sidebar && !sidebar.contains(e.target) && toggleBtn && !toggleBtn.contains(e.target)) {
+                document.body.classList.remove("sidebar-open");
+            }
+        }
+    });
 
     // Sidebar category dropdowns: toggle the group that follows the header.
     window.toggleNavGroup = function (btn) {

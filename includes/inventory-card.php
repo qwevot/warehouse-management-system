@@ -57,10 +57,7 @@
         </div>
 
         <div class="modal-footer">
-            <span style="margin-right:auto;" class="merge-hint">Print labels:</span>
-            <button type="button" class="btn upload" onclick="printScoped('barcode')">Print Barcode</button>
-            <button type="button" class="btn upload" onclick="printScoped('qr')">Print QR Code</button>
-            <button type="button" class="btn primary" onclick="printScoped('both')">Print Both</button>
+            <button type="button" class="btn primary" style="margin-left:auto;" onclick="printScoped('both')">Print</button>
         </div>
 
     </div>
