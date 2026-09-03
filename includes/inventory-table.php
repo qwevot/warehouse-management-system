@@ -29,32 +29,44 @@ $inventorySortOptions = [
 ];
 
 $axisPanelHtml = '
-<div class="filter-group">
-    <div class="filter-group-title">Brand</div>
-    <input type="text" class="axis-input" data-axis="brand" placeholder="Search brands...">
-    <div class="axis-chips" data-chips="brand"></div>
+<div class="filter-panel-header">
+    <span class="filter-panel-title">Filter Options</span>
+    <button type="button" class="filter-close-btn" onclick="toggleFilterPanel()" aria-label="Close">&times;</button>
 </div>
-<div class="filter-group">
-    <div class="filter-group-title">Shelf</div>
-    <input type="text" class="axis-input" data-axis="shelf" placeholder="Search used shelves...">
-    <div class="axis-chips" data-chips="shelf"></div>
-</div>
-<div class="filter-group">
-    <div class="filter-group-title">Row</div>
-    <input type="text" class="axis-input" data-axis="row" placeholder="Search used rows...">
-    <div class="axis-chips" data-chips="row"></div>
-</div>
-<div class="filter-group">
-    <div class="filter-group-title">Column</div>
-    <input type="text" class="axis-input" data-axis="col" placeholder="Search used columns...">
-    <div class="axis-chips" data-chips="col"></div>
-</div>
-<div class="filter-group">
-    <div class="filter-group-title">Date</div>
-    <div class="axis-chips" data-chips="created"></div>
+<div class="filter-panel-content">
+    <div class="filter-group">
+        <div class="filter-group-title">Brand</div>
+        <input type="text" class="axis-input" data-axis="brand" placeholder="Search brand...">
+        <div class="axis-chips" data-chips="brand"></div>
+    </div>
+    <div class="filter-group">
+        <div class="filter-group-title">Location</div>
+        <div class="axis-location-grid">
+            <div class="axis-location-field">
+                <span class="axis-location-label">Shelf</span>
+                <input type="text" class="axis-input" data-axis="shelf" placeholder="e.g. A">
+            </div>
+            <div class="axis-location-field">
+                <span class="axis-location-label">Row</span>
+                <input type="text" class="axis-input" data-axis="row" placeholder="e.g. 1">
+            </div>
+            <div class="axis-location-field">
+                <span class="axis-location-label">Col</span>
+                <input type="text" class="axis-input" data-axis="col" placeholder="e.g. 2">
+            </div>
+        </div>
+        <div class="axis-chips" data-chips="shelf"></div>
+        <div class="axis-chips" data-chips="row"></div>
+        <div class="axis-chips" data-chips="col"></div>
+    </div>
+    <div class="filter-group">
+        <div class="filter-group-title">Date</div>
+        <div class="axis-chips" data-chips="created"></div>
+    </div>
 </div>
 <div class="filter-panel-footer">
-    <button type="button" class="btn sm secondary" onclick="clearFilters()">Clear</button>
+    <button type="button" class="btn sm secondary" onclick="clearFilters()">Reset All</button>
+    <button type="button" class="btn sm primary" onclick="toggleFilterPanel()">Apply Filters</button>
 </div>';
 
 $inventoryToolbar = buildToolbar('', $inventorySortOptions, [
@@ -74,7 +86,7 @@ $inventoryPagination = buildPagination('', [
     'pageSize' => (int)($state['size'] ?? 10),
 ]);
 ?>
-<?php echo $inventoryToolbar; ?>
+<div class="toolbar-row"><?php echo $inventoryToolbar; ?></div>
 
 <div id="selectionBanner" class="selection-banner" style="display:none;">
     <span id="selectionBannerText" class="banner-text"></span>

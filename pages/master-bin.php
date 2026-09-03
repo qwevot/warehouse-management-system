@@ -56,8 +56,9 @@ $deleteIcon  = icon_delete();
         <div class="section-title">Binned Brands</div>
     </div>
 
+    <div class="toolbar-row"><?php echo $binBrandToolbar; ?></div>
+
     <div class="table-container">
-        <div class="toolbar-row"><?php echo $binBrandToolbar; ?></div>
         <table>
             <thead>
                 <tr>
@@ -77,21 +78,17 @@ $deleteIcon  = icon_delete();
                     </tr>
                 <?php else: ?>
                     <?php foreach ($binnedBrands as $i => $b): ?>
-                        <tr class="bin-brand-row" data-name="<?php echo e(mb_strtolower($b['name'])); ?>" data-binned-ts="<?php echo strtotime($b['deleted_at']); ?>">
+                        <tr class="bin-brand-row" data-name="<?php echo e(mb_strtolower($b['name'])); ?>" data-deleted="<?php echo strtotime($b['deleted_at']); ?>">
                             <td class="no-col"><?php echo $i + 1; ?></td>
                             <td>
                                 <div class="row-actions">
                                     <?php if (user_can('master.manage')): ?>
-                                    <form method="POST" action="<?php echo BASE_URL; ?>/actions/restore-brand.php" style="display:inline;">
-                                        <input type="hidden" name="id" value="<?php echo (int)$b['id']; ?>">
-                                        <button type="submit" class="btn icon-btn restore" title="Restore"><?php echo $restoreIcon; ?></button>
-                                    </form>
-                                    <?php endif; ?>
-                                    <?php if (user_can('permanent_delete')): ?>
-                                    <form method="POST" action="<?php echo BASE_URL; ?>/actions/delete-brand-permanent.php" style="display:inline;">
-                                        <input type="hidden" name="id" value="<?php echo (int)$b['id']; ?>">
-                                        <button type="submit" class="btn icon-btn delete" title="Permanently Delete" onclick="return confirm('Permanently delete this brand? This cannot be undone.')"><?php echo $deleteIcon; ?></button>
-                                    </form>
+                                    <button type="button" class="btn icon-btn" title="Restore" onclick="restoreBinnedBrand(<?php echo (int)$b['id']; ?>, <?php echo e(json_encode($b['name'])); ?>)">
+                                        <?php echo $restoreIcon; ?>
+                                    </button>
+                                    <button type="button" class="btn icon-btn delete" title="Delete permanently" onclick="purgeBinnedBrand(<?php echo (int)$b['id']; ?>, <?php echo e(json_encode($b['name'])); ?>)">
+                                        <?php echo $deleteIcon; ?>
+                                    </button>
                                     <?php endif; ?>
                                 </div>
                             </td>
@@ -115,8 +112,9 @@ $deleteIcon  = icon_delete();
         <div class="section-title">Binned Master Items</div>
     </div>
 
+    <div class="toolbar-row"><?php echo $binItemToolbar; ?></div>
+
     <div class="table-container">
-        <div class="toolbar-row"><?php echo $binItemToolbar; ?></div>
         <table>
             <thead>
                 <tr>
@@ -180,8 +178,16 @@ window.BIN_BRAND_DATA = <?php echo json_encode(array_map(function($b) {
         'name'       => $b['name'],
         'modified_by'=> $b['modified_by'] ?? '',
         'deleted_at' => $b['deleted_at'] ? date('Y-m-d H:i', strtotime($b['deleted_at'])) : '',
+        'deleted_ts' => strtotime($b['deleted_at'] ?? ''),
     ];
 }, $binnedBrands)); ?>;
+
+<?php
+$uniqueItemBrands = array_values(array_filter(array_unique(array_column($binnedItems, 'brand'))));
+sort($uniqueItemBrands);
+$uniqueItemClasses = array_values(array_filter(array_unique(array_column($binnedItems, 'product_class'))));
+sort($uniqueItemClasses);
+?>
 
 window.BIN_ITEM_DATA = <?php echo json_encode(array_map(function($it) {
     return [
@@ -191,6 +197,7 @@ window.BIN_ITEM_DATA = <?php echo json_encode(array_map(function($it) {
         'product_class'  => $it['product_class'] ?? '',
         'modified_by'    => $it['modified_by'] ?? '',
         'deleted_at'     => $it['deleted_at'] ? date('Y-m-d H:i', strtotime($it['deleted_at'])) : '',
+        'deleted_ts'     => strtotime($it['deleted_at'] ?? ''),
     ];
 }, $binnedItems)); ?>;
 
@@ -217,7 +224,20 @@ initDataTable({
         { key: 'modified_by', label: 'Modified By' },
         { key: 'deleted_at',  label: 'Binned At' },
     ],
-    filterGroups: [],
+    filterGroups: [
+        {
+            title: 'Binned Date',
+            key: 'deleted',
+            value: (tr) => createdBuckets(tr.dataset.deleted),
+            dataValue: (r) => createdBuckets(r.deleted_ts),
+            options: [
+                { value: 'today', label: 'Today' },
+                { value: 'week',  label: 'Past Week' },
+                { value: 'month', label: 'Past Month' },
+                { value: 'all',   label: 'All' },
+            ],
+        },
+    ],
     sorters: {
         'name-asc':  function(a,b) { return a.dataset.name.localeCompare(b.dataset.name); },
         'name-desc': function(a,b) { return b.dataset.name.localeCompare(a.dataset.name); },
@@ -251,7 +271,38 @@ initDataTable({
         { key: 'modified_by',    label: 'Modified By' },
         { key: 'deleted_at',     label: 'Binned At' },
     ],
-    filterGroups: [],
+    filterGroups: [
+        <?php if (!empty($uniqueItemBrands)): ?>
+        {
+            title: 'Brand',
+            key: 'brand',
+            options: <?php echo json_encode(array_map(function($b) {
+                return ['value' => mb_strtolower($b), 'label' => $b];
+            }, $uniqueItemBrands)); ?>,
+        },
+        <?php endif; ?>
+        <?php if (!empty($uniqueItemClasses)): ?>
+        {
+            title: 'Product Class',
+            key: 'class',
+            options: <?php echo json_encode(array_map(function($c) {
+                return ['value' => mb_strtolower($c), 'label' => $c];
+            }, $uniqueItemClasses)); ?>,
+        },
+        <?php endif; ?>
+        {
+            title: 'Binned Date',
+            key: 'binned',
+            value: (tr) => createdBuckets(tr.dataset.binnedTs),
+            dataValue: (r) => createdBuckets(r.deleted_ts),
+            options: [
+                { value: 'today', label: 'Today' },
+                { value: 'week',  label: 'Past Week' },
+                { value: 'month', label: 'Past Month' },
+                { value: 'all',   label: 'All' },
+            ],
+        },
+    ],
     sorters: {
         'code-asc':    function(a,b) { return a.dataset.code.localeCompare(b.dataset.code); },
         'code-desc':   function(a,b) { return b.dataset.code.localeCompare(a.dataset.code); },

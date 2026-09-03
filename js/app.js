@@ -568,10 +568,16 @@
         filterInventory();
     };
 
+    window.toggleFilterPanel = function (e) {
+        if (e && e.stopPropagation) e.stopPropagation();
+        const wrap = $("#filterWrap");
+        if (wrap) wrap.classList.toggle("open");
+    };
+
     // Clicking anywhere outside the panel closes it.
     document.addEventListener("click", (e) => {
         const wrap = $("#filterWrap");
-        if (wrap && !wrap.contains(e.target)) {
+        if (wrap && wrap.classList.contains("open") && !wrap.contains(e.target)) {
             wrap.classList.remove("open");
         }
     });
@@ -715,8 +721,17 @@
         runAction(BASE + "/actions/delete-permanent.php", { id: id }, null, "Delete failed.", "Item permanently deleted.");
     };
 
+    window.runEditMoveToBin = function () {
+        const btn = $("#editBinBtn");
+        const id = btn ? btn.dataset.id : null;
+        if (!id) return;
+        closeModal("editModal");
+        window.runDeleteItem(id);
+    };
+
     window.runEditStatus = function () {
         const btn = $("#editStatusBtn");
+        if (!btn) return;
         const label = btn.dataset.action === "taken"
             ? "Move this item out of the warehouse?"
             : "Return this item to the warehouse?";
@@ -820,12 +835,10 @@
             $("#editPhotoPlaceholder").style.display = "";
         }
 
-        const statusBtn = $("#editStatusBtn");
-        const isOut = item.status !== "available";
-        statusBtn.textContent = isOut ? "Mark as Active" : "Mark as Inactive";
-        statusBtn.className = "btn " + (isOut ? "upload" : "danger");
-        statusBtn.dataset.action = isOut ? "available" : "taken";
-        statusBtn.dataset.id = item.id;
+        const binBtn = $("#editBinBtn");
+        if (binBtn) {
+            binBtn.dataset.id = item.id;
+        }
 
         openModal("editModal");
     };
@@ -1527,7 +1540,7 @@
         bind("#pagePrev", "click", window.pagePrev);
         bind("#pageNext", "click", window.pageNext);
         bind("#pageSizeSelect", "change", window.changePageSize);
-        bind("#filterBtn", "click", window.toggleFilterPanel);
+        bind("#filterBtn", "click", (e) => window.toggleFilterPanel(e));
     })();
 
     // Show any flash queued by a previous AJAX action (split/merge/etc.).
@@ -1588,9 +1601,12 @@
         }
 
         function getFilterVal(group, tr) {
-            const v = group.value;
+            const v = group.value !== undefined ? group.value : group.key;
             if (typeof v === "function") return v(tr);
-            if (typeof v === "string") return tr.dataset[v];
+            if (typeof v === "string") {
+                if (tr.dataset && tr.dataset[v] !== undefined) return tr.dataset[v];
+                if (group.key && tr.dataset && tr.dataset[group.key] !== undefined) return tr.dataset[group.key];
+            }
             return String(tr.textContent);
         }
 
@@ -1604,9 +1620,24 @@
             return true;
         }
 
+        let currentSortKey = cfg.defaultSortKey || null;
+        let currentSortDir = cfg.defaultSortDir || 'desc';
+
         function sortRows(rows) {
-            if (!sortSelect || !sortSelect.value) return;
-            const spec = (cfg.sorters || {})[sortSelect.value];
+            let spec = null;
+            if (currentSortKey && cfg.sorters) {
+                const combinedKey = currentSortKey + '_' + currentSortDir;
+                if (cfg.sorters[combinedKey]) {
+                    spec = cfg.sorters[combinedKey];
+                } else if (cfg.sorters[currentSortKey]) {
+                    spec = cfg.sorters[currentSortKey];
+                }
+            }
+            if (!spec && sortSelect && sortSelect.value) {
+                spec = (cfg.sorters || {})[sortSelect.value];
+            }
+            if (!spec) return;
+
             if (typeof spec === "function") {
                 rows.sort(spec);
                 return;
@@ -1617,8 +1648,9 @@
             };
             const numeric = (a, b) => {
                 const na = parseFloat(a), nb = parseFloat(b);
-                if (!isNaN(na) && !isNaN(nb) && String(na) === a.trim() && String(nb) === b.trim()) return na - nb;
-                return a.localeCompare(b);
+                const isNum = !isNaN(na) && !isNaN(nb) && String(na) === a.trim() && String(nb) === b.trim();
+                const diff = isNum ? (na - nb) : a.localeCompare(b);
+                return currentSortDir === 'asc' ? diff : -diff;
             };
             rows.sort((a, b) => numeric(getVal(a), getVal(b)));
         }
@@ -1718,6 +1750,25 @@
         function buildFilters() {
             if (!filterPanel || !groups.length) return;
             filterPanel.innerHTML = "";
+
+            const header = document.createElement("div");
+            header.className = "filter-panel-header";
+            header.innerHTML = `
+                <span class="filter-panel-title">Filter Options</span>
+                <button type="button" class="filter-close-btn" aria-label="Close filters">×</button>
+            `;
+            const closeBtn = header.querySelector(".filter-close-btn");
+            if (closeBtn && filterWrap) {
+                closeBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    filterWrap.classList.remove("open");
+                };
+            }
+            filterPanel.appendChild(header);
+
+            const content = document.createElement("div");
+            content.className = "filter-panel-content";
+
             groups.forEach((group, i) => {
                 let options = [];
                 if (group.options) {
@@ -1737,37 +1788,55 @@
                 title.className = "filter-group-title";
                 title.textContent = group.title;
                 wrap.appendChild(title);
+
                 const opts = document.createElement("div");
-                opts.className = "filter-options";
+                opts.className = "filter-options-chips";
                 options.forEach((opt) => {
-                    const label = document.createElement("label");
-                    label.className = "filter-option";
-                    const cb = document.createElement("input");
-                    cb.type = "checkbox";
-                    cb.value = opt.value;
-                    cb.addEventListener("change", () => {
-                        if (cb.checked) filterSets[i].add(opt.value); else filterSets[i].delete(opt.value);
+                    const chip = document.createElement("button");
+                    chip.type = "button";
+                    chip.className = "filter-chip" + (filterSets[i].has(opt.value) ? " active" : "");
+                    chip.textContent = opt.label;
+                    chip.onclick = () => {
+                        if (filterSets[i].has(opt.value)) {
+                            filterSets[i].delete(opt.value);
+                            chip.classList.remove("active");
+                        } else {
+                            filterSets[i].add(opt.value);
+                            chip.classList.add("active");
+                        }
                         render(true);
-                    });
-                    label.appendChild(cb);
-                    label.appendChild(document.createTextNode(" " + opt.label));
-                    opts.appendChild(label);
+                    };
+                    opts.appendChild(chip);
                 });
                 wrap.appendChild(opts);
-                filterPanel.appendChild(wrap);
+                content.appendChild(wrap);
             });
+            filterPanel.appendChild(content);
+
             const footer = document.createElement("div");
             footer.className = "filter-panel-footer";
+            
             const clear = document.createElement("button");
             clear.type = "button";
             clear.className = "btn sm secondary";
-            clear.textContent = "Clear";
+            clear.textContent = "Reset All";
             clear.onclick = () => {
                 filterSets.forEach((s) => s.clear());
-                filterPanel.querySelectorAll('input[type="checkbox"]').forEach((cb) => (cb.checked = false));
+                filterPanel.querySelectorAll(".filter-chip").forEach((c) => c.classList.remove("active"));
                 render(true);
             };
+
+            const apply = document.createElement("button");
+            apply.type = "button";
+            apply.className = "btn sm primary filter-apply-btn";
+            apply.textContent = "Apply Filters";
+            apply.onclick = (e) => {
+                e.stopPropagation();
+                if (filterWrap) filterWrap.classList.remove("open");
+            };
+
             footer.appendChild(clear);
+            footer.appendChild(apply);
             filterPanel.appendChild(footer);
         }
 
@@ -1813,7 +1882,87 @@
             render(true);
         });
 
+        const sortHeaders = qa(cfg.sortHeaderSelector || 'th.sortable');
+        sortHeaders.forEach((th) => {
+            const sortKey = th.dataset.sort;
+            if (!sortKey) return;
+            if (currentSortKey === sortKey) {
+                th.classList.add('active', currentSortDir);
+            }
+            th.addEventListener('click', () => {
+                if (currentSortKey === sortKey) {
+                    currentSortDir = currentSortDir === 'asc' ? 'desc' : 'asc';
+                } else {
+                    currentSortKey = sortKey;
+                    currentSortDir = th.dataset.defaultDir || 'desc';
+                }
+                sortHeaders.forEach((h) => h.classList.remove('active', 'asc', 'desc'));
+                th.classList.add('active', currentSortDir);
+                render(false);
+            });
+        });
+
         buildFilters();
         render(true);
+    };
+
+    window.initHistoryTable = function () {
+        initDataTable({
+            searchInput:    '#histSearchInput',
+            sortSelect:     '#histSortSelect',
+            tbody:          '#histBody',
+            row:            '.hist-row',
+            filterWrap:     '#histFilterWrap',
+            filterBtn:      '#histFilterBtn',
+            filterPanel:    '#histFilterPanel',
+            filterBadge:    '#histFilterBadge',
+            pagePrev:       '#histPagePrev',
+            pageNext:       '#histPageNext',
+            pageNumbers:    '#histPageNumbers',
+            pageRange:      '#histPageRange',
+            pagination:     '#histPagination',
+            pageSizeSelect: '#histPageSizeSelect',
+            exportFn:       'histExport',
+            exportName:     'movement-history',
+            exportCols: [
+                { key: 'type',        label: 'Type' },
+                { key: 'item_name',   label: 'Item' },
+                { key: 'quantity',    label: 'Quantity' },
+                { key: 'issued_to',   label: 'Issued To' },
+                { key: 'note',        label: 'Details / Note' },
+                { key: 'modified_by', label: 'Modified By' },
+                { key: 'created_at',  label: 'Date' },
+            ],
+            filterGroups: [
+                {
+                    title: 'Type',
+                    key: 'type',
+                    dataValue: (r) => r.type,
+                    options: [
+                        { value: 'in',       label: 'INBOUND' },
+                        { value: 'out',      label: 'OUTBOUND' },
+                        { value: 'transfer', label: 'TRANSFER' },
+                    ],
+                },
+                {
+                    title: 'Date',
+                    key: 'created',
+                    value: (tr) => createdBuckets(tr.dataset.created),
+                    dataValue: (r) => createdBuckets(r.created_ts),
+                    options: [
+                        { value: 'today', label: 'Today' },
+                        { value: 'week',  label: 'Past Week' },
+                        { value: 'month', label: 'Past Month' },
+                        { value: 'all',   label: 'All' },
+                    ],
+                },
+            ],
+            sorters: {
+                'newest': function (a, b) { return (parseInt(b.dataset.created, 10) || 0) - (parseInt(a.dataset.created, 10) || 0); },
+                'oldest': function (a, b) { return (parseInt(a.dataset.created, 10) || 0) - (parseInt(b.dataset.created, 10) || 0); },
+            },
+            data:     window.HIST_DATA,
+            dataText: function (r) { return r.item_name + ' ' + r.type + ' ' + (r.note || '') + ' ' + (r.issued_to || '') + ' ' + (r.modified_by || ''); },
+        });
     };
 })();

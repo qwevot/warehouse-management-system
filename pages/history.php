@@ -99,79 +99,10 @@ $histPagination = buildPagination('hist', ['pageSize' => 10]);
         ];
     }, $movements)); ?>;
 
-    // Buckets a timestamp into the date-filter groups a row belongs to
-    // (a row always belongs to 'all'; recent rows also match more specific
-    // ranges, so selecting any combination works as a union).
-    function histDateBuckets(ts) {
-        const t = parseInt(ts, 10);
-        if (!t) return ['all'];
-        const now = new Date();
-        const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 1000;
-        const out = ['all'];
-        if (t >= start) out.push('today');
-        if (t >= start - 6 * 86400) out.push('week');
-        if (t >= start - 29 * 86400) out.push('month');
-        return out;
-    }
-
     document.addEventListener("DOMContentLoaded", function () {
-        initDataTable({
-            searchInput:    '#histSearchInput',
-            sortSelect:     '#histSortSelect',
-            tbody:          '#histBody',
-            row:            '.hist-row',
-            filterWrap:     '#histFilterWrap',
-            filterBtn:      '#histFilterBtn',
-            filterPanel:    '#histFilterPanel',
-            filterBadge:    '#histFilterBadge',
-            pagePrev:       '#histPagePrev',
-            pageNext:       '#histPageNext',
-            pageNumbers:    '#histPageNumbers',
-            pageRange:      '#histPageRange',
-            pagination:     '#histPagination',
-            pageSizeSelect: '#histPageSizeSelect',
-            exportFn:       'histExport',
-            exportName:     'movement-history',
-            exportCols: [
-                { key: 'type',       label: 'Type' },
-                { key: 'item_name',  label: 'Item' },
-                { key: 'quantity',   label: 'Quantity' },
-                { key: 'issued_to',  label: 'Issued To' },
-                { key: 'note',       label: 'Details / Note' },
-                { key: 'modified_by', label: 'Modified By' },
-                { key: 'created_at', label: 'Date' },
-            ],
-            filterGroups: [
-                {
-                    title: 'Type',
-                    key: 'type',
-                    dataValue: (r) => r.type,
-                    options: [
-                        { value: 'in',       label: 'INBOUND' },
-                        { value: 'out',      label: 'OUTBOUND' },
-                        { value: 'transfer', label: 'TRANSFER' },
-                    ],
-                },
-                {
-                    title: 'Date',
-                    key: 'created',
-                    value: (tr) => histDateBuckets(tr.dataset.created),
-                    dataValue: (r) => histDateBuckets(r.created_ts),
-                    options: [
-                        { value: 'today', label: 'Today' },
-                        { value: 'week',  label: 'Past Week' },
-                        { value: 'month', label: 'Past Month' },
-                        { value: 'all',   label: 'All' },
-                    ],
-                },
-            ],
-            sorters: {
-                'newest': function (a, b) { return (parseInt(b.dataset.created, 10) || 0) - (parseInt(a.dataset.created, 10) || 0); },
-                'oldest': function (a, b) { return (parseInt(a.dataset.created, 10) || 0) - (parseInt(b.dataset.created, 10) || 0); },
-            },
-            data:     window.HIST_DATA,
-            dataText: function (r) { return r.item_name + ' ' + r.type + ' ' + (r.note || '') + ' ' + (r.issued_to || '') + ' ' + (r.modified_by || ''); },
-        });
+        if (typeof initHistoryTable === "function") {
+            initHistoryTable();
+        }
     });
 </script>
 

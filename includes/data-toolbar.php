@@ -39,15 +39,6 @@ function buildToolbar($prefix, $sortOptions = [], $options = []) {
     </div>
 
     <div class="filter-wrap">
-        <svg class="filter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" width="16" height="16"><path d="M8 4v16M8 4L5 7m3-3l3 3M16 20V4m0 0l3 3m-3-3l-3 3"/></svg>
-        <select class="filter" id="<?= $sortId ?>" title="Sort">
-            <?php foreach ($sortOptions as $opt): ?>
-                <option value="<?= $opt[0] ?>"><?= $opt[1] ?></option>
-            <?php endforeach; ?>
-        </select>
-    </div>
-
-    <div class="filter-wrap">
         <button type="button" class="filter" title="Refresh" onclick="location.reload()">
             <svg class="filter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
         </button>

@@ -50,7 +50,9 @@ include __DIR__ . '/../includes/flash.php';
         <div class="section-header">
             <div class="section-title">Brands</div>
             <?php if (user_can('master.manage')): ?>
+                <button type="button" class="btn upload add-button" title="Import brands from a CSV or Excel file" onclick="document.getElementById('importBrandFile').click()">Import (.csv or .xlsx)</button>
                 <button type="button" class="btn primary add-button add-toggle-btn" id="addBrandToggleBtn" onclick="toggleBrandAddForm()">+ Add Brand</button>
+                <input type="file" id="importBrandFile" accept=".csv,.xlsx,.xls" style="display:none;">
             <?php endif; ?>
         </div>
 
@@ -58,8 +60,9 @@ include __DIR__ . '/../includes/flash.php';
 
     </div>
 
+    <div class="toolbar-row"><?php echo $brandToolbar; ?></div>
+
     <div class="table-container">
-        <div class="toolbar-row"><?php echo $brandToolbar; ?></div>
         <table>
             <thead>
                 <tr>
@@ -68,7 +71,14 @@ include __DIR__ . '/../includes/flash.php';
                     <th>Brand</th>
                     <th>Description</th>
                     <th>Items</th>
-                    <th>Last Modified</th>
+                    <th class="sortable" data-sort="date" data-default-dir="desc" title="Sort by Last Modified">
+                        <div class="th-sort-inner">
+                            <span>Last Modified</span>
+                            <svg class="sort-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </div>
+                    </th>
                     <th>Modified By</th>
                 </tr>
             </thead>
@@ -81,7 +91,7 @@ include __DIR__ . '/../includes/flash.php';
                     </tr>
                 <?php else: ?>
                     <?php foreach ($brands as $i => $b): ?>
-                        <tr class="brand-row" data-name="<?php echo e(mb_strtolower($b['name'])); ?>" data-used-by="<?php echo (int)$b['used_by']; ?>" data-in-use="<?php echo $b['used_by'] > 0 ? 'yes' : 'no'; ?>">
+                        <tr class="brand-row" data-name="<?php echo e(mb_strtolower($b['name'])); ?>" data-used-by="<?php echo (int)$b['used_by']; ?>" data-in-use="<?php echo $b['used_by'] > 0 ? 'yes' : 'no'; ?>" data-updated="<?php echo $b['updated_at'] ? (int)strtotime($b['updated_at']) : 0; ?>">
                             <td class="no-col"><?php echo $i + 1; ?></td>
                             <td>
                                 <div class="row-actions">
@@ -156,7 +166,11 @@ initDataTable({
             ],
         },
     ],
+    defaultSortKey: 'date',
+    defaultSortDir: 'desc',
     sorters: {
+        'date_desc': function(a, b) { return (parseInt(b.dataset.updated, 10) || 0) - (parseInt(a.dataset.updated, 10) || 0); },
+        'date_asc':  function(a, b) { return (parseInt(a.dataset.updated, 10) || 0) - (parseInt(b.dataset.updated, 10) || 0); },
         'name-asc':  function(a, b) { return a.dataset.name.localeCompare(b.dataset.name); },
         'name-desc': function(a, b) { return b.dataset.name.localeCompare(a.dataset.name); },
     },
@@ -217,6 +231,54 @@ initDataTable({
         });
         if (ok === null) return;
         window.submitPostForm("<?php echo BASE_URL; ?>/actions/delete-brand.php", { id: id });
+    }
+
+    const importBrandInput = document.getElementById("importBrandFile");
+    if (importBrandInput) {
+        importBrandInput.addEventListener("change", function () {
+            const file = this.files && this.files[0];
+            if (!file) return;
+            this.value = "";
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                window.ensureXlsx()
+                    .then(() => {
+                        const wb = XLSX.read(e.target.result, { type: "array" });
+                        const sheet = wb.Sheets[wb.SheetNames[0]];
+                        const rows = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: false });
+                        if (!rows.length) return alert("No rows found in the file.");
+
+                        const pick = (r, ...keys) => {
+                            for (const k of keys) {
+                                const v = r[k];
+                                if (v !== undefined && v !== null && String(v).trim() !== "") return String(v).trim();
+                            }
+                            return "";
+                        };
+
+                        const mapped = rows.map((r) => ({
+                            name:        pick(r, "name", "Name", "brand", "Brand", "brand_name", "Brand Name"),
+                            description: pick(r, "description", "Description", "desc", "Desc"),
+                        })).filter((r) => r.name !== "");
+
+                        if (!mapped.length) return alert("No valid rows found. Each brand requires at least a Name.");
+
+                        if (!confirm("Import " + mapped.length + " brand(s)?")) return;
+
+                        window.post(BASE_URL + "/actions/import-brands.php", { rows: JSON.stringify(mapped) })
+                            .then((res) => res.json())
+                            .then((d) => {
+                                if (!d.ok) throw new Error(d.message || "Import failed.");
+                                window.queueFlash(d.message || "Brands imported.");
+                                location.reload();
+                            })
+                            .catch((err) => alert(err.message || "Import failed."));
+                    })
+                    .catch(() => alert("Could not load the Excel/CSV reader."));
+            };
+            reader.readAsArrayBuffer(file);
+        });
     }
 </script>
 

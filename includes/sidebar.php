@@ -26,11 +26,11 @@ if (current_role() === 'super admin') {
 }
 ?>
 <aside class="sidebar">
-
-    <a href="<?php echo BASE_URL; ?>/pages/dashboard.php" class="nav-item <?php echo $activeNav === 'dashboard' ? 'active' : ''; ?> dashboard-link">
-        <div class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"></rect><rect x="14" y="3" width="7" height="5"></rect><rect x="14" y="12" width="7" height="9"></rect><rect x="3" y="16" width="7" height="5"></rect></svg></div>
-        <span>Dashboard</span>
-    </a>
+    <div class="sidebar-content">
+        <a href="<?php echo BASE_URL; ?>/pages/dashboard.php" class="nav-item <?php echo $activeNav === 'dashboard' ? 'active' : ''; ?> dashboard-link">
+            <div class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"></rect><rect x="14" y="3" width="7" height="5"></rect><rect x="14" y="12" width="7" height="9"></rect><rect x="3" y="16" width="7" height="5"></rect></svg></div>
+            <span>Dashboard</span>
+        </a>
 
     <?php foreach ($navSections as $label => $navItems): ?>
         <?php $isOpen = in_array($activeNav, array_column($navItems, 0), true); ?>
@@ -50,5 +50,10 @@ if (current_role() === 'super admin') {
         </div>
 
     <?php endforeach; ?>
+    </div>
+
+    <div class="sidebar-version">
+        v<?php echo defined('APP_VERSION') ? APP_VERSION : '1.0.0'; ?>
+    </div>
 
 </aside>

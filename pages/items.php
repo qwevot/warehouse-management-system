@@ -61,7 +61,9 @@ $itemsPagination = buildPagination('items');
         <div class="section-header">
             <div class="section-title">Master Items</div>
             <?php if (user_can('master.manage')): ?>
+                <button type="button" class="btn upload add-button" title="Import master items from a CSV or Excel file" onclick="document.getElementById('importMasterFile').click()">Import (.csv or .xlsx)</button>
                 <button type="button" class="btn primary add-button add-toggle-btn" id="addMasterItemToggleBtn" onclick="toggleMasterAddForm()">+ Add Item</button>
+                <input type="file" id="importMasterFile" accept=".csv,.xlsx,.xls" style="display:none;">
             <?php endif; ?>
         </div>
 
@@ -69,7 +71,7 @@ $itemsPagination = buildPagination('items');
 
     </div>
 
-    <?php echo $itemsToolbar; ?>
+    <div class="toolbar-row"><?php echo $itemsToolbar; ?></div>
 
     <div class="table-container">
         <table>
@@ -82,7 +84,14 @@ $itemsPagination = buildPagination('items');
                     <th>Qty</th>
                     <th>Product Code</th>
                     <th>Product Class</th>
-                    <th>Last Modified</th>
+                    <th class="sortable" data-sort="modified" data-default-dir="desc" title="Sort by Last Modified">
+                        <div class="th-sort-inner">
+                            <span>Last Modified</span>
+                            <svg class="sort-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </div>
+                    </th>
                     <th>Modified By</th>
                 </tr>
             </thead>
@@ -156,8 +165,11 @@ $itemsPagination = buildPagination('items');
                     ?>
                 </div>
                 <div class="field">
-                    <label for="editProductClass">Product class</label>
-                    <input type="text" id="editProductClass" name="product_class" maxlength="100">
+                    <label for="editProductClass">Product Class</label>
+                    <select id="editProductClass" name="product_class" required>
+                        <option value="">— Select class —</option>
+                        <option value="Inventory Item">Inventory Item</option>
+                    </select>
                 </div>
             </div>
         </div>
@@ -201,29 +213,33 @@ initDataTable({
     exportFn:       'itemsExport',
     exportName:     'master-items',
     exportCols: [
-        { key: 'product_code',   label: 'Product Code' },
         { key: 'product_name',  label: 'Product Name' },
         { key: 'brand',          label: 'Brand' },
-        { key: 'product_class',  label: 'Product Class' },
         { key: 'total_qty',      label: 'Qty' },
-        { key: 'modified_by',    label: 'Modified By' },
+        { key: 'product_code',   label: 'Product Code' },
+        { key: 'product_class',  label: 'Product Class' },
         { key: 'updated_at',     label: 'Last Modified' },
+        { key: 'modified_by',    label: 'Modified By' },
     ],
     filterGroups: [
         { title: 'Brand',        key: 'brand',        value: 'brand' },
         { title: 'Product Class',key: 'product_class',value: 'class' },
     ],
+    defaultSortKey: 'modified',
+    defaultSortDir: 'desc',
     sorters: {
-        'code-asc':     function(a,b) { return String(a.dataset.code||"").toLowerCase().localeCompare(String(b.dataset.code||"").toLowerCase()); },
-        'code-desc':    function(a,b) { return String(b.dataset.code||"").toLowerCase().localeCompare(String(a.dataset.code||"").toLowerCase()); },
-        'name-asc':     function(a,b) { return String(a.dataset.name||"").toLowerCase().localeCompare(String(b.dataset.name||"").toLowerCase()); },
-        'name-desc':    function(a,b) { return String(b.dataset.name||"").toLowerCase().localeCompare(String(a.dataset.name||"").toLowerCase()); },
-        'brand-asc':    function(a,b) { return String(a.dataset.brand||"").toLowerCase().localeCompare(String(b.dataset.brand||"").toLowerCase()); },
-        'brand-desc':   function(a,b) { return String(b.dataset.brand||"").toLowerCase().localeCompare(String(a.dataset.brand||"").toLowerCase()); },
-        'class-asc':    function(a,b) { return String(a.dataset.class||"").toLowerCase().localeCompare(String(b.dataset.class||"").toLowerCase()); },
-        'class-desc':   function(a,b) { return String(b.dataset.class||"").toLowerCase().localeCompare(String(a.dataset.class||"").toLowerCase()); },
-        'modified-asc': function(a,b) { return parseInt(a.dataset.modifiedTs) - parseInt(b.dataset.modifiedTs); },
-        'modified-desc':function(a,b) { return parseInt(b.dataset.modifiedTs) - parseInt(a.dataset.modifiedTs); },
+        'code-asc':      function(a,b) { return String(a.dataset.code||"").toLowerCase().localeCompare(String(b.dataset.code||"").toLowerCase()); },
+        'code-desc':     function(a,b) { return String(b.dataset.code||"").toLowerCase().localeCompare(String(a.dataset.code||"").toLowerCase()); },
+        'name-asc':      function(a,b) { return String(a.dataset.name||"").toLowerCase().localeCompare(String(b.dataset.name||"").toLowerCase()); },
+        'name-desc':     function(a,b) { return String(b.dataset.name||"").toLowerCase().localeCompare(String(a.dataset.name||"").toLowerCase()); },
+        'brand-asc':     function(a,b) { return String(a.dataset.brand||"").toLowerCase().localeCompare(String(b.dataset.brand||"").toLowerCase()); },
+        'brand-desc':    function(a,b) { return String(b.dataset.brand||"").toLowerCase().localeCompare(String(a.dataset.brand||"").toLowerCase()); },
+        'class-asc':     function(a,b) { return String(a.dataset.class||"").toLowerCase().localeCompare(String(b.dataset.class||"").toLowerCase()); },
+        'class-desc':    function(a,b) { return String(b.dataset.class||"").toLowerCase().localeCompare(String(a.dataset.class||"").toLowerCase()); },
+        'modified_asc':  function(a,b) { return (parseInt(a.dataset.modifiedTs, 10)||0) - (parseInt(b.dataset.modifiedTs, 10)||0); },
+        'modified_desc': function(a,b) { return (parseInt(b.dataset.modifiedTs, 10)||0) - (parseInt(a.dataset.modifiedTs, 10)||0); },
+        'modified-asc':  function(a,b) { return (parseInt(a.dataset.modifiedTs, 10)||0) - (parseInt(b.dataset.modifiedTs, 10)||0); },
+        'modified-desc': function(a,b) { return (parseInt(b.dataset.modifiedTs, 10)||0) - (parseInt(a.dataset.modifiedTs, 10)||0); },
     },
     data:     window.ITEMS_DATA,
     dataText: function(r) { return r.product_code + ' ' + r.product_name + ' ' + r.brand; },
@@ -256,6 +272,56 @@ initDataTable({
         });
         if (ok === null) return;
         window.submitPostForm("<?php echo BASE_URL; ?>/actions/delete-master-item.php", { id: id });
+    }
+
+    const importMasterInput = document.getElementById("importMasterFile");
+    if (importMasterInput) {
+        importMasterInput.addEventListener("change", function () {
+            const file = this.files && this.files[0];
+            if (!file) return;
+            this.value = "";
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                window.ensureXlsx()
+                    .then(() => {
+                        const wb = XLSX.read(e.target.result, { type: "array" });
+                        const sheet = wb.Sheets[wb.SheetNames[0]];
+                        const rows = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: false });
+                        if (!rows.length) return alert("No rows found in the file.");
+
+                        const pick = (r, ...keys) => {
+                            for (const k of keys) {
+                                const v = r[k];
+                                if (v !== undefined && v !== null && String(v).trim() !== "") return String(v).trim();
+                            }
+                            return "";
+                        };
+
+                        const mapped = rows.map((r) => ({
+                            product_name:  pick(r, "product_name", "Product Name", "name", "Name", "item", "Item"),
+                            brand:         pick(r, "brand", "Brand"),
+                            product_code:  pick(r, "product_code", "Product Code", "code", "Code"),
+                            product_class: pick(r, "product_class", "Product Class", "class", "Class"),
+                        })).filter((r) => r.product_name !== "" && r.brand !== "");
+
+                        if (!mapped.length) return alert("No valid rows found. Each item requires at least a Product Name and Brand.");
+
+                        if (!confirm("Import " + mapped.length + " master item(s)?")) return;
+
+                        window.post(BASE_URL + "/actions/import-master-items.php", { rows: JSON.stringify(mapped) })
+                            .then((res) => res.json())
+                            .then((d) => {
+                                if (!d.ok) throw new Error(d.message || "Import failed.");
+                                window.queueFlash(d.message || "Master items imported.");
+                                location.reload();
+                            })
+                            .catch((err) => alert(err.message || "Import failed."));
+                    })
+                    .catch(() => alert("Could not load the Excel/CSV reader."));
+            };
+            reader.readAsArrayBuffer(file);
+        });
     }
 </script>
 

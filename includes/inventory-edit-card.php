@@ -76,8 +76,8 @@
         </div>
 
         <div class="modal-footer">
-            <button type="button" class="btn danger" id="editStatusBtn" style="margin-right:auto;" onclick="runEditStatus()">
-                Mark as Inactive
+            <button type="button" class="btn danger" id="editBinBtn" style="margin-right:auto;" onclick="runEditMoveToBin()">
+                Move to Bin
             </button>
             <button type="button" class="btn cancel" onclick="closeModal('editModal')">Cancel</button>
             <button type="submit" class="btn primary">Save Changes</button>

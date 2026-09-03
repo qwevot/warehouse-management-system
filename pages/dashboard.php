@@ -104,7 +104,14 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
                     <th>Issued To</th>
                     <th>User</th>
                     <th>Note</th>
-                    <th>Date</th>
+                    <th class="sortable" data-sort="date" data-default-dir="desc" title="Sort by Date">
+                        <div class="th-sort-inner">
+                            <span>Date</span>
+                            <svg class="sort-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </div>
+                    </th>
                 </tr>
             </thead>
             <tbody id="moveBody">
@@ -227,9 +234,13 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
                     ],
                 },
             ],
+            defaultSortKey: 'date',
+            defaultSortDir: 'desc',
             sorters: {
-                'newest': function (a, b) { return (parseInt(b.dataset.created, 10) || 0) - (parseInt(a.dataset.created, 10) || 0); },
-                'oldest': function (a, b) { return (parseInt(a.dataset.created, 10) || 0) - (parseInt(b.dataset.created, 10) || 0); },
+                'date_desc': function (a, b) { return (parseInt(b.dataset.created, 10) || 0) - (parseInt(a.dataset.created, 10) || 0); },
+                'date_asc':  function (a, b) { return (parseInt(a.dataset.created, 10) || 0) - (parseInt(b.dataset.created, 10) || 0); },
+                'newest':    function (a, b) { return (parseInt(b.dataset.created, 10) || 0) - (parseInt(a.dataset.created, 10) || 0); },
+                'oldest':    function (a, b) { return (parseInt(a.dataset.created, 10) || 0) - (parseInt(b.dataset.created, 10) || 0); },
             },
             data:     window.MOVE_DATA,
             dataText: function (r) { return r.item_name + ' ' + r.type + ' ' + (r.note || '') + ' ' + (r.issued_to || ''); },
