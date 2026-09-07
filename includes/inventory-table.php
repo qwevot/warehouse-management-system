@@ -209,7 +209,11 @@ $inventoryPagination = buildPagination('', [
                         <?php endif; ?>
 
                         <?php if (col_on($tableColumns, 'status')): ?>
-                            <td data-label="Status"><span class="status <?php echo e($item['status']); ?>"><?php echo $item['status'] === 'available' ? 'ACTIVE' : 'INACTIVE'; ?></span></td>
+                            <td data-label="Status">
+                                <span class="status <?php echo e($item['status']); ?>">
+                                    <?php echo $item['status'] === 'available' ? 'AVAILABLE' : ($item['status'] === 'in_transit' ? 'IN TRANSIT' : 'TAKEN'); ?>
+                                </span>
+                            </td>
                         <?php endif; ?>
 
                         <?php if (col_on($tableColumns, 'serial')): ?>

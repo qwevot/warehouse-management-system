@@ -76,7 +76,7 @@ function inventory_fetch(PDO $pdo, string $mode, array $state, bool $all = false
         $q = (string)($state['q'] ?? '');
         if ($q !== '') {
             $like = '%' . $q . '%';
-            $where[] = '(i.name LIKE ? OR i.brand LIKE ? OR u.serial LIKE ? OR i.barcode LIKE ? OR i.location LIKE ? OR COALESCE(u.bin_note, "") LIKE ? OR COALESCE(u.modified_by, "") LIKE ?)';
+            $where[] = '(i.name LIKE ? OR i.brand LIKE ? OR u.serial LIKE ? OR i.barcode LIKE ? OR COALESCE(u.location, i.location, "") LIKE ? OR COALESCE(u.bin_note, "") LIKE ? OR COALESCE(u.modified_by, "") LIKE ?)';
             array_push($params, $like, $like, $like, $like, $like, $like, $like);
         }
 
@@ -94,13 +94,13 @@ function inventory_fetch(PDO $pdo, string $mode, array $state, bool $all = false
                 $v = (string)$v;
                 if (preg_match('/^' . $prefix . '\d{2}$/', $v) !== 1) continue;
                 if ($key === 'shelf') {
-                    $parts[] = 'i.location LIKE ?';
+                    $parts[] = 'COALESCE(u.location, i.location, "") LIKE ?';
                     $params[] = $v . '-%';
                 } elseif ($key === 'row') {
-                    $parts[] = 'i.location LIKE ?';
+                    $parts[] = 'COALESCE(u.location, i.location, "") LIKE ?';
                     $params[] = '%-' . $v . '-%';
                 } else {
-                    $parts[] = 'i.location LIKE ?';
+                    $parts[] = 'COALESCE(u.location, i.location, "") LIKE ?';
                     $params[] = '%-' . $v;
                 }
             }
@@ -133,7 +133,8 @@ function inventory_fetch(PDO $pdo, string $mode, array $state, bool $all = false
         $page = max(1, (int)($state['page'] ?? 1));
 
         $selectSql = "SELECT u.id, u.inventory_id, u.serial, u.qr, u.status, u.created_at, u.updated_at, u.modified_by, u.bin_note, u.deleted_at,
-                             i.name, i.brand, i.location, i.photo, i.barcode, 1 AS quantity
+                             COALESCE(u.location, i.location, '') AS location,
+                             i.name, i.brand, i.photo, i.barcode, 1 AS quantity
                       FROM inventory_units u
                       JOIN inventory_list i ON i.id = u.inventory_id
                       WHERE {$whereSql}
@@ -418,7 +419,8 @@ function render_inventory_rows(array $rows, string $mode, int $startIndex = 0): 
         }
 
         if (in_array('status', $cols, true)) {
-            $html .= '<td data-label="Status"><span class="status ' . e($item['status']) . '">' . ($item['status'] === 'available' ? 'ACTIVE' : 'INACTIVE') . '</span></td>';
+            $stLabel = $item['status'] === 'available' ? 'AVAILABLE' : ($item['status'] === 'in_transit' ? 'IN TRANSIT' : 'TAKEN');
+            $html .= '<td data-label="Status"><span class="status ' . e($item['status']) . '">' . $stLabel . '</span></td>';
         }
 
         if (in_array('serial', $cols, true)) {

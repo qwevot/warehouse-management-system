@@ -81,26 +81,39 @@ try {
     $pdo->beginTransaction();
 
     if ($unit !== null) {
-        // Update unit-level location
-        $up = $pdo->prepare("UPDATE inventory_units SET location = ?, updated_at = NOW(), modified_by = ? WHERE id = ?");
+        $prevLocation = (string)($unit['location'] ?? '');
+        $prevStatus   = (string)($unit['status'] ?? 'available');
+
+        $isMovingOutside = ($destType === 'office' || $destType === 'customer' || $role === 'customer');
+        $isMovingToWarehouse = ($destType === 'warehouse');
+
+        // 1. If moving outside and previously available in warehouse, auto-detach by decrementing warehouse lot quantity
+        if ($isMovingOutside && $prevStatus === 'available' && ($prevLocation === '' || $prevLocation === 'In Warehouse' || (!str_contains($prevLocation, ' - ') && $prevLocation !== 'Main Office'))) {
+            $pdo->prepare("UPDATE inventory_list SET quantity = GREATEST(0, quantity - 1), updated_at = NOW(), modified_by = ? WHERE id = ?")
+                ->execute([$modifier, $inventoryId]);
+        }
+        // 2. If returning to warehouse from outside or from in_transit, increment warehouse lot quantity
+        elseif ($isMovingToWarehouse && ($prevStatus === 'in_transit' || $prevLocation === 'Main Office' || str_contains($prevLocation, ' - '))) {
+            $pdo->prepare("UPDATE inventory_list SET quantity = quantity + 1, updated_at = NOW(), modified_by = ? WHERE id = ?")
+                ->execute([$modifier, $inventoryId]);
+        }
+
+        // Update ONLY this specific unit's location and resolve in_transit status
+        $up = $pdo->prepare("UPDATE inventory_units SET location = ?, status = 'available', updated_at = NOW(), modified_by = ? WHERE id = ?");
         $up->execute([$finalLocation, $modifier, $unitId]);
 
-        // Also update lot location if it's currently empty
-        $upLot = $pdo->prepare("UPDATE inventory_list SET location = COALESCE(NULLIF(location, ''), ?), updated_at = NOW(), modified_by = ? WHERE id = ?");
-        $upLot->execute([$finalLocation, $modifier, $inventoryId]);
-
-        // Record movement history
+        // Record movement history as CHECK IN for this specific unit
         $movementNote = "Unit [{$unitSerial}] checked in to {$finalLocation}" . ($notes !== '' ? " ({$notes})" : "");
-        $insMove = $pdo->prepare("INSERT INTO stock_movements (item_id, type, quantity, issued_to, note, modified_by, created_at) VALUES (?, 'transfer', 1, ?, ?, ?, NOW())");
+        $insMove = $pdo->prepare("INSERT INTO stock_movements (item_id, type, quantity, issued_to, note, modified_by, created_at) VALUES (?, 'check_in', 1, ?, ?, ?, NOW())");
         $insMove->execute([$inventoryId, $finalLocation, $movementNote, $modifier]);
     } else {
         // Update batch-level location
-        $up = $pdo->prepare("UPDATE inventory_list SET location = ?, updated_at = NOW(), modified_by = ? WHERE id = ?");
+        $up = $pdo->prepare("UPDATE inventory_list SET location = ?, status = 'available', updated_at = NOW(), modified_by = ? WHERE id = ?");
         $up->execute([$finalLocation, $modifier, $inventoryId]);
 
-        // Record movement history
+        // Record movement history as CHECK IN
         $movementNote = "Lot checked in to {$finalLocation}" . ($notes !== '' ? " ({$notes})" : "");
-        $insMove = $pdo->prepare("INSERT INTO stock_movements (item_id, type, quantity, issued_to, note, modified_by, created_at) VALUES (?, 'transfer', ?, ?, ?, ?, NOW())");
+        $insMove = $pdo->prepare("INSERT INTO stock_movements (item_id, type, quantity, issued_to, note, modified_by, created_at) VALUES (?, 'check_in', ?, ?, ?, ?, NOW())");
         $insMove->execute([$inventoryId, (int)($item['quantity'] ?? 1), $finalLocation, $movementNote, $modifier]);
     }
 

@@ -1416,6 +1416,12 @@ th.action-col {
     color: var(--green-ink);
 }
 
+.status.in_transit,
+.status.in-transit {
+    color: #6d28d9;
+    background: #ede9fe;
+    border: 1px solid #ddd6fe;
+}
 
 .status.taken {
     color: var(--red-ink);
@@ -1429,6 +1435,12 @@ th.action-col {
 .status.outbound {
     color: var(--red-ink);
     background: var(--red-soft);
+}
+
+.status.check-in,
+.status.check_in {
+    color: #047857;
+    background: #d1fae5;
 }
 
 .status.transfer {

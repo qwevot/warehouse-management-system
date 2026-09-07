@@ -30,6 +30,7 @@ include __DIR__ . '/../includes/header.php';
         <div class="form-grid">
 
             <?php include __DIR__ . '/../includes/item-search-field.php'; ?>
+            <input type="hidden" name="unit_id" id="stockUnitId">
 
             <?php include __DIR__ . '/../includes/item-card-select.php'; ?>
 
@@ -86,8 +87,16 @@ include __DIR__ . '/../includes/header.php';
             return false;
         }
         document.getElementById("stockItemId").value = item.id;
+        document.getElementById("stockUnitId").value = item.unit_id || "";
+        const qtyInput = document.getElementById("quantity");
+        if (item.unit_id || item.is_unit) {
+            qtyInput.value = 1;
+            qtyInput.max = 1;
+        } else {
+            qtyInput.removeAttribute("max");
+        }
         const input = document.getElementById("stockItemSearch");
-        input.value = item.name + (item.brand ? "  (" + item.brand + ")" : "");
+        input.value = item.name + (item.brand ? "  (" + item.brand + ")" : "") + (item.serial ? "  [SN: " + item.serial + "]" : "");
         window.showItemCard(item);
         return true;
     });
@@ -102,6 +111,9 @@ include __DIR__ . '/../includes/header.php';
             return;
         }
         document.getElementById("stockItemId").value = it.id;
+        document.getElementById("stockUnitId").value = "";
+        const qtyInput = document.getElementById("quantity");
+        if (qtyInput) qtyInput.removeAttribute("max");
         const input = document.getElementById("stockItemSearch");
         input.value = it.name + (it.brand ? "  (" + it.brand + ")" : "");
         window.showItemCard(it);

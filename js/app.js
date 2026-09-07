@@ -1018,9 +1018,20 @@
 
         const statusEl = document.getElementById("selCardStatus");
         if (statusEl) {
-            const isAvail = it.status === "available";
-            statusEl.textContent = isAvail ? "AVAILABLE" : (it.status === "taken" ? "TAKEN / ISSUED" : "INACTIVE");
-            statusEl.className = "status " + (isAvail ? "available" : "taken");
+            const st = (it.status || "").toLowerCase();
+            if (st === "available") {
+                statusEl.textContent = "AVAILABLE";
+                statusEl.className = "status available";
+            } else if (st === "in_transit") {
+                statusEl.textContent = "IN TRANSIT";
+                statusEl.className = "status in_transit";
+            } else if (st === "taken") {
+                statusEl.textContent = "TAKEN / ISSUED";
+                statusEl.className = "status taken";
+            } else {
+                statusEl.textContent = (it.status || "INACTIVE").toUpperCase();
+                statusEl.className = "status taken";
+            }
         }
 
         const photo = document.getElementById("selCardPhoto");
@@ -2159,6 +2170,7 @@
                     options: [
                         { value: 'in',       label: 'INBOUND' },
                         { value: 'out',      label: 'OUTBOUND' },
+                        { value: 'check_in', label: 'CHECK IN' },
                         { value: 'transfer', label: 'TRANSFER' },
                     ],
                 },

@@ -364,6 +364,7 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
                     options: [
                         { value: 'in',       label: 'INBOUND' },
                         { value: 'out',      label: 'OUTBOUND' },
+                        { value: 'check_in', label: 'CHECK IN' },
                         { value: 'transfer', label: 'TRANSFER' },
                     ],
                 },

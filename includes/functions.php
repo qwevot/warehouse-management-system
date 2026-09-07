@@ -7,10 +7,6 @@ function e($value): string
     return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
 }
 
-function make_serial(int $id): string
-{
-    return 'PG-' . date('Y') . '-' . str_pad($id, 5, '0', STR_PAD_LEFT);
-}
 
 function ean13(string $digits12): string
 {
@@ -371,12 +367,22 @@ function fetch_active_items(PDO $pdo): array
 
 function movement_type_labels(): array
 {
-    return ['in' => 'INBOUND', 'out' => 'OUTBOUND', 'transfer' => 'TRANSFER'];
+    return [
+        'in'       => 'INBOUND',
+        'out'      => 'OUTBOUND',
+        'transfer' => 'TRANSFER',
+        'check_in' => 'CHECK IN',
+    ];
 }
 
 function movement_status_class(?string $type): string
 {
-    return $type === 'in' ? 'inbound' : ($type === 'out' ? 'outbound' : 'transfer');
+    return match ($type) {
+        'in'       => 'inbound',
+        'out'      => 'outbound',
+        'check_in' => 'check-in',
+        default    => 'transfer',
+    };
 }
 
 function movement_qty(string $type, $quantity): string
@@ -386,6 +392,9 @@ function movement_qty(string $type, $quantity): string
     }
     if ($type === 'out') {
         return '-' . (int)$quantity;
+    }
+    if ($type === 'check_in') {
+        return (int)$quantity . ' unit';
     }
     return '<span class="dash">—</span>';
 }

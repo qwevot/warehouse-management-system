@@ -33,14 +33,23 @@ try {
     }
 
     $modifiedBy = current_user_name();
+    $unitId = (int)($_POST['unit_id'] ?? 0);
 
     // Decrease the item's on-hand quantity.
     $pdo->prepare('UPDATE inventory_list SET quantity = quantity - ?, updated_at = NOW(), modified_by = ? WHERE id = ?')
         ->execute([$qty, $modifiedBy, $itemId]);
 
-    // Mark corresponding units as taken / issued in strict FIFO order (oldest first)
-    $pdo->prepare("UPDATE inventory_units SET status = 'taken', modified_by = ?, updated_at = NOW() WHERE inventory_id = ? AND status = 'available' AND deleted_at IS NULL ORDER BY id ASC LIMIT {$qty}")
-        ->execute([$modifiedBy, $itemId]);
+    $transitLocation = 'In Transit (' . $issuedTo . ')';
+
+    if ($unitId > 0) {
+        // Target the specific scanned unit
+        $pdo->prepare("UPDATE inventory_units SET status = 'in_transit', location = ?, modified_by = ?, updated_at = NOW() WHERE id = ? AND status = 'available' AND deleted_at IS NULL")
+            ->execute([$transitLocation, $modifiedBy, $unitId]);
+    } else {
+        // Mark corresponding units as in_transit in strict FIFO order (oldest first)
+        $pdo->prepare("UPDATE inventory_units SET status = 'in_transit', location = ?, modified_by = ?, updated_at = NOW() WHERE inventory_id = ? AND status = 'available' AND deleted_at IS NULL ORDER BY id ASC LIMIT {$qty}")
+            ->execute([$transitLocation, $modifiedBy, $itemId]);
+    }
 
     // Record the movement.
     $pdo->prepare('INSERT INTO stock_movements (item_id, type, quantity, issued_to, note, modified_by) VALUES (?, ?, ?, ?, ?, ?)')
