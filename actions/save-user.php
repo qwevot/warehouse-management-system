@@ -34,15 +34,17 @@ if ($st->fetch()) {
     redirect_to('users', 'error', 'That username already exists.');
 }
 
+$company  = trim($_POST['company'] ?? '');
+$company  = $company !== '' ? $company : null;
 $fullName = $fullName !== '' ? $fullName : null;
 
 if ($id > 0) {
     if ($password !== '') {
-        $pdo->prepare('UPDATE users SET username = ?, full_name = ?, role = ?, password_hash = ? WHERE id = ?')
-            ->execute([$username, $fullName, $role, password_hash($password, PASSWORD_DEFAULT), $id]);
+        $pdo->prepare('UPDATE users SET username = ?, full_name = ?, role = ?, company = ?, password_hash = ? WHERE id = ?')
+            ->execute([$username, $fullName, $role, $company, password_hash($password, PASSWORD_DEFAULT), $id]);
     } else {
-        $pdo->prepare('UPDATE users SET username = ?, full_name = ?, role = ? WHERE id = ?')
-            ->execute([$username, $fullName, $role, $id]);
+        $pdo->prepare('UPDATE users SET username = ?, full_name = ?, role = ?, company = ? WHERE id = ?')
+            ->execute([$username, $fullName, $role, $company, $id]);
     }
     redirect_to('users', 'added', 'User "' . $username . '" updated.');
 }
@@ -51,7 +53,7 @@ if ($password === '') {
     redirect_to('users', 'error', 'A password is required for a new user.');
 }
 
-$pdo->prepare('INSERT INTO users (username, full_name, role, password_hash) VALUES (?, ?, ?, ?)')
-    ->execute([$username, $fullName, $role, password_hash($password, PASSWORD_DEFAULT)]);
+$pdo->prepare('INSERT INTO users (username, full_name, role, company, password_hash) VALUES (?, ?, ?, ?, ?)')
+    ->execute([$username, $fullName, $role, $company, password_hash($password, PASSWORD_DEFAULT)]);
 
 redirect_to('users', 'added', 'User "' . $username . '" added.');

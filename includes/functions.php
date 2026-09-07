@@ -237,30 +237,81 @@ function dash(?string $value): string
     return ($value !== null && $value !== '') ? e($value) : '<span class="dash">—</span>';
 }
 
-// CREATE: insert an inventory row and derive its serial/barcode/QR, returning
-// the created row's id, serial, barcode, and qr. $fields may contain name,
-// brand, quantity, location, photo, status, and modified_by. When $serial is
-// empty it is auto-generated from the new id; likewise for $barcode.
+function qr_for_unit(string $serial, string $barcode, string $name, string $brand, string $location): string
+{
+    $location = $location === '' ? 'N/A' : $location;
+    $brand    = $brand === '' ? 'N/A' : $brand;
+    $barcode  = $barcode === '' ? 'N/A' : $barcode;
+    return "SN: {$serial}\nBARCODE: {$barcode}\nITEM: {$name}\nBRAND: {$brand}\nLOC: {$location}";
+}
+
+function next_unit_serial(PDO $pdo): string
+{
+    $lockName = 'lock_unit_serial';
+    $locked = false;
+    try {
+        $st = $pdo->prepare('SELECT GET_LOCK(?, 5)');
+        $st->execute([$lockName]);
+        $locked = ($st->fetchColumn() == 1);
+
+        $max = (int)$pdo->query(
+            "SELECT MAX(CAST(SUBSTR(serial, 9) AS UNSIGNED))
+               FROM inventory_units
+              WHERE serial LIKE 'SN-" . date('Y') . "-%'"
+        )->fetchColumn();
+
+        return 'SN-' . date('Y') . '-' . str_pad((string)($max + 1), 5, '0', STR_PAD_LEFT);
+    } finally {
+        if ($locked) {
+            $pdo->prepare('SELECT RELEASE_LOCK(?)')->execute([$lockName]);
+        }
+    }
+}
+
+function provision_inventory_units(PDO $pdo, int $inventoryId, int $count, ?string $modifiedBy = null): array
+{
+    if ($count <= 0) return [];
+
+    $st = $pdo->prepare("SELECT name, brand, location, barcode FROM inventory_list WHERE id = ?");
+    $st->execute([$inventoryId]);
+    $item = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$item) return [];
+
+    $name     = (string)$item['name'];
+    $brand    = (string)($item['brand'] ?? '');
+    $location = (string)($item['location'] ?? '');
+    $barcode  = (string)($item['barcode'] ?? '');
+
+    $created = [];
+    for ($i = 0; $i < $count; $i++) {
+        $unitSerial = next_unit_serial($pdo);
+        $qr = qr_for_unit($unitSerial, $barcode, $name, $brand, $location);
+
+        $pdo->prepare(
+            "INSERT INTO inventory_units (inventory_id, serial, qr, status, modified_by, created_at, updated_at)
+             VALUES (?, ?, ?, 'available', ?, NOW(), NOW())"
+        )->execute([$inventoryId, $unitSerial, $qr, $modifiedBy]);
+
+        $created[] = [
+            'id'     => (int)$pdo->lastInsertId(),
+            'serial' => $unitSerial,
+            'qr'     => $qr,
+        ];
+    }
+
+    return $created;
+}
+
+// CREATE: insert an inventory row and derive its barcode and unit records
 function create_inventory_item(PDO $pdo, array $fields, ?string $serial = null, ?string $barcode = null): array
 {
-    $name     = (string)($fields['name'] ?? '');
-    $brand    = $fields['brand'] ?? null;
-    $quantity = max(0, (int)($fields['quantity'] ?? 1));
-    $location = $fields['location'] ?? null;
-    $photo    = (string)($fields['photo'] ?? '');
-    $status   = (string)($fields['status'] ?? 'available');
+    $name       = (string)($fields['name'] ?? '');
+    $brand      = $fields['brand'] ?? null;
+    $quantity   = max(0, (int)($fields['quantity'] ?? 1));
+    $location   = $fields['location'] ?? null;
+    $photo      = (string)($fields['photo'] ?? '');
+    $status     = (string)($fields['status'] ?? 'available');
     $modifiedBy = $fields['modified_by'] ?? null;
-
-    $pdo->prepare(
-        "INSERT INTO inventory_list (name, brand, quantity, location, photo, status, modified_by, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, NOW())"
-    )->execute([$name, $brand, $quantity, $location, $photo, $status, $modifiedBy]);
-
-    $id = (int)$pdo->lastInsertId();
-
-    if ($serial === null || $serial === '') {
-        $serial = make_serial($id);
-    }
 
     if ($barcode === null || $barcode === '') {
         $barcode = barcode_for_item($pdo, [
@@ -271,12 +322,24 @@ function create_inventory_item(PDO $pdo, array $fields, ?string $serial = null, 
         ]);
     }
 
-    $qr = qr_for_item($serial, $name, (string)$location);
+    $qr = "BARCODE: {$barcode}\nITEM: {$name}\nBRAND: " . ($brand ?: 'N/A') . "\nLOC: " . ($location ?: 'N/A');
 
-    $pdo->prepare('UPDATE inventory_list SET serial = ?, barcode = ?, qr = ? WHERE id = ?')
-        ->execute([$serial, $barcode, $qr, $id]);
+    $pdo->prepare(
+        "INSERT INTO inventory_list (name, brand, quantity, location, barcode, qr, photo, status, modified_by, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())"
+    )->execute([$name, $brand, $quantity, $location, $barcode, $qr, $photo, $status, $modifiedBy]);
 
-    return ['id' => $id, 'serial' => $serial, 'barcode' => $barcode, 'qr' => $qr];
+    $id = (int)$pdo->lastInsertId();
+
+    // Provision corresponding individual unit records
+    $units = provision_inventory_units($pdo, $id, $quantity, $modifiedBy);
+
+    return [
+        'id'      => $id,
+        'barcode' => $barcode,
+        'qr'      => $qr,
+        'units'   => $units,
+    ];
 }
 
 // Shared stock-movement helpers used by the dashboard and history views.

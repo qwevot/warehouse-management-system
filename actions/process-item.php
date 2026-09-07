@@ -41,14 +41,14 @@ $created = create_inventory_item($pdo, [
     'location'    => $location,
     'status'      => 'available',
     'modified_by' => $modifiedBy,
-], $serialInput === '' ? null : $serialInput);
+]);
 
-$id     = $created['id'];
-$serial = $created['serial'];
+$id      = $created['id'];
+$barcode = $created['barcode'];
 
 $photo = '';
 if ($photoData !== '') {
-    $photo = save_photo($photoData, $serial);
+    $photo = save_photo($photoData, 'item_' . $id . '_' . time());
     if ($photo === null) {
         $pdo->prepare('DELETE FROM inventory_list WHERE id = ?')->execute([$id]);
         fail('The photo could not be saved. Please try again.');
@@ -56,5 +56,5 @@ if ($photoData !== '') {
     $pdo->prepare('UPDATE inventory_list SET photo = ? WHERE id = ?')->execute([$photo, $id]);
 }
 
-header('Location: ' . BASE_URL . '/pages/index.php?added=' . urlencode($serial));
+header('Location: ' . BASE_URL . '/pages/index.php?added=' . urlencode($barcode));
 exit;

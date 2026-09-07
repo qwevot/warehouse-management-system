@@ -15,7 +15,7 @@ function current_user(): ?array
 
     if ($user === null) {
         try {
-            $st = db()->prepare('SELECT id, username, full_name, role FROM users WHERE id = ?');
+            $st = db()->prepare('SELECT id, username, full_name, role, company FROM users WHERE id = ?');
             $st->execute([$_SESSION['user_id']]);
             $row = $st->fetch();
             $user = $row === false ? null : $row;
@@ -48,7 +48,7 @@ function current_user_name(): ?string
 // The canonical role strings, lowest privilege first.
 function available_roles(): array
 {
-    return ['guest', 'technician', 'engineer', 'admin', 'super admin'];
+    return ['guest', 'customer', 'technician', 'engineer', 'admin', 'super admin'];
 }
 
 function current_role(): ?string

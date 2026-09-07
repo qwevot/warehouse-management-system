@@ -355,7 +355,7 @@ body.sidebar-collapsed .main {
 
 .quick-actions-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: 16px;
     margin-bottom: 24px;
 }
@@ -386,6 +386,15 @@ body.sidebar-collapsed .main {
 
 .quick-action-card.blue:hover {
     box-shadow: 0 8px 26px rgba(37, 99, 235, 0.38);
+}
+
+.quick-action-card.green {
+    background: linear-gradient(135deg, #059669 0%, #047857 100%);
+    box-shadow: 0 4px 16px rgba(16, 185, 129, 0.25);
+}
+
+.quick-action-card.green:hover {
+    box-shadow: 0 8px 26px rgba(16, 185, 129, 0.38);
 }
 
 .quick-action-card.red {
@@ -2553,7 +2562,7 @@ button,
 
 .kpi-grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 16px;
     margin-bottom: 20px;
 }

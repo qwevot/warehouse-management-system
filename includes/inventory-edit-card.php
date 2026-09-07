@@ -1,3 +1,19 @@
+<?php
+if (!isset($masterItems)) {
+    try {
+        $masterItems = db()->query("SELECT product_name, brand FROM master_items WHERE deleted_at IS NULL ORDER BY product_name ASC, brand ASC")->fetchAll();
+    } catch (Exception $e) {
+        $masterItems = [];
+    }
+}
+?>
+<script>
+if (!window.MASTER_ITEMS) {
+    window.MASTER_ITEMS = <?php echo json_encode(array_map(function($mi) {
+        return ['product_name' => $mi['product_name'], 'brand' => $mi['brand'] ?? ''];
+    }, $masterItems)); ?>;
+}
+</script>
 <div class="modal-backdrop" id="editModal">
 
     <form id="editItemForm" action="<?php echo BASE_URL; ?>/actions/process-edit.php" method="POST" enctype="multipart/form-data" class="modal">
@@ -16,8 +32,33 @@
 
                 <div class="field">
                     <label for="edit_item_name">Item Name *</label>
-                    <input type="text" id="edit_item_name" name="item_name" required>
-                    <div class="error-msg">Item name is required.</div>
+                    <div class="suggest-wrap">
+                        <input
+                            type="text"
+                            id="edit_item_name"
+                            name="item_name"
+                            placeholder="Search item name..."
+                            autocomplete="off"
+                            required
+                        >
+                        <div class="suggest-box" id="editItemNameSuggest"></div>
+                    </div>
+                    <div class="error-msg">Please select an item from Master Data.</div>
+                </div>
+
+                <div class="field">
+                    <label for="edit_brand">Brand</label>
+                    <div class="suggest-wrap">
+                        <input
+                            type="text"
+                            id="edit_brand"
+                            name="brand"
+                            class="js-brand-suggest"
+                            placeholder="Search or select brand..."
+                            autocomplete="off"
+                        >
+                        <div class="suggest-box" id="editBrandSuggest"></div>
+                    </div>
                 </div>
 
                 <div class="field">
@@ -32,21 +73,9 @@
                 </div>
 
                 <div class="field">
-                    <label for="edit_brand">Brand</label>
-                    <?php $brandSelectId = 'edit_brand'; include __DIR__ . '/brand-select.php'; ?>
-                </div>
-
-                <div class="field">
                     <label for="edit_quantity">Quantity *</label>
                     <input type="number" id="edit_quantity" name="quantity" min="1" value="1" required>
                 </div>
-
-                <div class="field">
-                    <label for="edit_serial">Serial No.</label>
-                    <input type="text" id="edit_serial" name="serial" maxlength="32">
-                </div>
-
-
 
             </div>
 

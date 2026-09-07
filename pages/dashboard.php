@@ -98,16 +98,19 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
         <div class="kpi-value"><?php echo $totalQty; ?> Units</div>
         <div class="kpi-hint">View Inventory List &rarr;</div>
     </a>
-    <button type="button" class="kpi-card scan-link" onclick="openScanModal()">
-        <div class="kpi-label">Scan Item</div>
-        <div class="scan-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="28" height="28" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2"></path><path d="M17 3h2a2 2 0 0 1 2 2v2"></path><path d="M21 17v2a2 2 0 0 1-2 2h-2"></path><path d="M7 21H5a2 2 0 0 1-2-2v-2"></path><line x1="7" y1="12" x2="17" y2="12"></line></svg>
-        </div>
-        <div class="kpi-hint">Scan an item to view details</div>
-    </button>
 </div>
 
 <div class="quick-actions-grid">
+    <a href="javascript:void(0)" onclick="openScanModal()" class="quick-action-card green">
+        <div class="quick-action-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        </div>
+        <div class="quick-action-content">
+            <div class="quick-action-title">Check In</div>
+            <div class="quick-action-desc">Scan item &amp; update custody location</div>
+        </div>
+        <div class="quick-action-arrow">&rarr;</div>
+    </a>
     <a href="<?php echo BASE_URL; ?>/pages/stock-in.php" class="quick-action-card blue">
         <div class="quick-action-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
@@ -257,13 +260,18 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
 </section>
 
 <?php include __DIR__ . '/../includes/scan-modal.php'; ?>
+<?php include __DIR__ . '/../includes/checkin-modal.php'; ?>
 
 <script>
     <?php include __DIR__ . '/../includes/stock-items-data.php'; ?>
 
-    // A successful scan shows the item's details in the shared item card.
+    // A successful scan opens the Check-In modal to confirm/update location
     window.setScanHandler(function (item) {
-        window.showItemCard(item);
+        if (window.openCheckInModal) {
+            window.openCheckInModal(item);
+        } else {
+            window.showItemCard(item);
+        }
         return true;
     });
 

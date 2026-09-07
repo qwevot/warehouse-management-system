@@ -113,6 +113,7 @@ $inventoryPagination = buildPagination('', [
                 <?php if (col_on($tableColumns, 'status')): ?><th>Status</th><?php endif; ?>
                 <?php if (col_on($tableColumns, 'serial')): ?><th>Serial No.</th><?php endif; ?>
                 <?php if (col_on($tableColumns, 'barcode')): ?><th>Barcode No.</th><?php endif; ?>
+                <?php if (col_on($tableColumns, 'qr')): ?><th>QR Code</th><?php endif; ?>
                 <?php if (col_on($tableColumns, 'registered')): ?>
                     <th class="sortable" data-sort="created" data-default-dir="desc" title="Sort by Ref. Date">
                         <div class="th-sort-inner">
@@ -222,6 +223,14 @@ $inventoryPagination = buildPagination('', [
                                 <?php else: ?>
                                     <span class="dash">—</span>
                                 <?php endif; ?>
+                            </td>
+                        <?php endif; ?>
+
+                        <?php if (col_on($tableColumns, 'qr')): ?>
+                            <td data-label="QR Code">
+                                <button type="button" class="btn icon-btn view" title="View Details / QR Code" onclick="openItemModal(<?php echo (int)($item['inventory_id'] ?? $item['id']); ?>)">
+                                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+                                </button>
                             </td>
                         <?php endif; ?>
 

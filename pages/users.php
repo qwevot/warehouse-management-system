@@ -11,7 +11,7 @@ $dbError = '';
 
 try {
     $pdo = db();
-    $users = $pdo->query('SELECT id, username, full_name, role, created_at FROM users ORDER BY id ASC')->fetchAll();
+    $users = $pdo->query('SELECT id, username, full_name, role, company, created_at FROM users ORDER BY id ASC')->fetchAll();
 } catch (Exception $e) {
     $dbError = 'Could not load users from the database.';
 }
@@ -30,6 +30,7 @@ $userSortOptions = [
     ['username',  'Username A-Z'],
     ['fullname',  'Full Name A-Z'],
     ['role',      'Role'],
+    ['company',   'Company A-Z'],
 ];
 $userToolbar    = buildToolbar('user', $userSortOptions);
 $userPagination = buildPagination('user', ['pageSize' => 10]);
@@ -57,13 +58,14 @@ $userPagination = buildPagination('user', ['pageSize' => 10]);
                     <th>Username</th>
                     <th>Full Name</th>
                     <th>Role</th>
+                    <th>Company</th>
                     <th>Created</th>
                 </tr>
             </thead>
             <tbody id="userBody">
                 <?php if (empty($users)): ?>
                     <tr>
-                        <td colspan="6" style="text-align:center; color:#9ca3af; padding:40px;">
+                        <td colspan="7" style="text-align:center; color:#9ca3af; padding:40px;">
                             No users yet. Add one above.
                         </td>
                     </tr>
@@ -73,16 +75,17 @@ $userPagination = buildPagination('user', ['pageSize' => 10]);
                             data-created="<?php echo strtotime($u['created_at']); ?>"
                             data-username="<?php echo e(mb_strtolower((string)$u['username'])); ?>"
                             data-fullname="<?php echo e(mb_strtolower((string)($u['full_name'] ?? ''))); ?>"
-                            data-role="<?php echo e(mb_strtolower((string)$u['role'])); ?>">
+                            data-role="<?php echo e(mb_strtolower((string)$u['role'])); ?>"
+                            data-company="<?php echo e(mb_strtolower((string)($u['company'] ?? ''))); ?>">
                             <td class="no-col"><?php echo $i + 1; ?></td>
                             <td>
                                 <div class="row-actions">
-                                    <button type="button" class="btn icon-btn edit" title="Edit" onclick="openEditUserModal(<?php echo (int)$u['id']; ?>, <?php echo e(json_encode($u['username'])); ?>, <?php echo e(json_encode($u['full_name'] ?? '')); ?>, <?php echo e(json_encode($u['role'])); ?>)">
+                                    <button type="button" class="btn icon-btn edit" title="Edit" onclick="openEditUserModal(<?php echo (int)$u['id']; ?>, <?php echo e(json_encode($u['username'])); ?>, <?php echo e(json_encode($u['full_name'] ?? '')); ?>, <?php echo e(json_encode($u['role'])); ?>, <?php echo e(json_encode($u['company'] ?? '')); ?>)">
                                         <?php echo icon_edit(); ?>
                                     </button>
                                     <?php if ((int)$u['id'] !== $currentUserId): ?>
                                         <button type="button" class="btn icon-btn delete" title="Delete" onclick="confirmDeleteUser(<?php echo (int)$u['id']; ?>, <?php echo e(json_encode($u['username'])); ?>)">
-                                            <?php echo icon_delete(); ?>
+                                             <?php echo icon_delete(); ?>
                                         </button>
                                     <?php endif; ?>
                                 </div>
@@ -90,6 +93,7 @@ $userPagination = buildPagination('user', ['pageSize' => 10]);
                             <td><?php echo e($u['username']); ?></td>
                             <td><?php echo dash($u['full_name']); ?></td>
                             <td><?php echo e(ucfirst($u['role'])); ?></td>
+                            <td><?php echo dash($u['company']); ?></td>
                             <td class="registered-on"><?php echo e(fmt_datetime($u['created_at'])); ?></td>
                         </tr>
                     <?php endforeach; ?>
@@ -108,6 +112,7 @@ $userPagination = buildPagination('user', ['pageSize' => 10]);
             'username'   => $u['username'],
             'full_name'  => $u['full_name'] ?? '',
             'role'       => $u['role'],
+            'company'    => $u['company'] ?? '',
             'created_at' => $u['created_at'] ? date('Y-m-d H:i', strtotime($u['created_at'])) : '',
         ];
     }, $users)); ?>;
@@ -134,6 +139,7 @@ $userPagination = buildPagination('user', ['pageSize' => 10]);
                 { key: 'username',   label: 'Username' },
                 { key: 'full_name',  label: 'Full Name' },
                 { key: 'role',       label: 'Role' },
+                { key: 'company',    label: 'Company' },
                 { key: 'created_at', label: 'Created' },
             ],
             filterGroups: [
@@ -152,11 +158,31 @@ $userPagination = buildPagination('user', ['pageSize' => 10]);
                 'username': function (a, b) { return (a.dataset.username || '').localeCompare(b.dataset.username || ''); },
                 'fullname': function (a, b) { return (a.dataset.fullname || '').localeCompare(b.dataset.fullname || ''); },
                 'role':     function (a, b) { return (a.dataset.role || '').localeCompare(b.dataset.role || ''); },
+                'company':  function (a, b) { return (a.dataset.company || '').localeCompare(b.dataset.company || ''); },
             },
             data:     window.USERS_DATA,
-            dataText: function (r) { return r.username + ' ' + r.full_name + ' ' + r.role; },
+            dataText: function (r) { return r.username + ' ' + r.full_name + ' ' + r.role + ' ' + (r.company || ''); },
+        });
+
+        // Dynamic company input display based on role
+        document.getElementById("addRole")?.addEventListener("change", function() {
+            toggleCompanyField("addRole", "addCompanyField");
+        });
+        document.getElementById("editRole")?.addEventListener("change", function() {
+            toggleCompanyField("editRole", "editCompanyField");
         });
     });
+
+    function toggleCompanyField(roleSelectId, companyFieldId) {
+        const roleSel = document.getElementById(roleSelectId);
+        const compField = document.getElementById(companyFieldId);
+        if (!roleSel || !compField) return;
+        if (roleSel.value === 'customer') {
+            compField.style.display = 'block';
+        } else {
+            compField.style.display = 'block'; // Keep accessible or visible if wanted, or leave optional
+        }
+    }
 </script>
 
 <!-- Add user modal -->
@@ -184,7 +210,11 @@ $userPagination = buildPagination('user', ['pageSize' => 10]);
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="field">
+                <div class="field" id="addCompanyField">
+                    <label for="addCompany">Company (for Customer role)</label>
+                    <input type="text" id="addCompany" name="company" maxlength="100" placeholder="e.g. PT Maju Bersama">
+                </div>
+                <div class="field" style="grid-column: 1 / -1;">
                     <label for="addPassword">Password *</label>
                     <input type="password" id="addPassword" name="password" required autocomplete="new-password">
                 </div>
@@ -223,7 +253,11 @@ $userPagination = buildPagination('user', ['pageSize' => 10]);
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="field">
+                <div class="field" id="editCompanyField">
+                    <label for="editCompany">Company (for Customer role)</label>
+                    <input type="text" id="editCompany" name="company" maxlength="100" placeholder="e.g. PT Maju Bersama">
+                </div>
+                <div class="field" style="grid-column: 1 / -1;">
                     <label for="editPassword">New password</label>
                     <input type="password" id="editPassword" name="password" autocomplete="new-password" placeholder="Leave blank to keep current">
                 </div>
@@ -238,6 +272,11 @@ $userPagination = buildPagination('user', ['pageSize' => 10]);
 
 <script>
     function openAddUserModal() {
+        document.getElementById("addUsername").value = "";
+        document.getElementById("addFullName").value = "";
+        document.getElementById("addRole").value = "guest";
+        document.getElementById("addCompany").value = "";
+        document.getElementById("addPassword").value = "";
         document.getElementById("addUserModal").classList.add("open");
     }
 
@@ -245,11 +284,13 @@ $userPagination = buildPagination('user', ['pageSize' => 10]);
         document.getElementById("addUserModal").classList.remove("open");
     }
 
-    function openEditUserModal(id, username, fullName, role) {
+    function openEditUserModal(id, username, fullName, role, company) {
         document.getElementById("editUserId").value = id;
         document.getElementById("editUsername").value = username;
         document.getElementById("editFullName").value = fullName || "";
         document.getElementById("editRole").value = role;
+        document.getElementById("editCompany").value = company || "";
+        document.getElementById("editPassword").value = "";
         document.getElementById("editUserModal").classList.add("open");
     }
 
@@ -270,3 +311,4 @@ $userPagination = buildPagination('user', ['pageSize' => 10]);
 </script>
 
 <?php include __DIR__ . '/../includes/footer.php'; ?>
+

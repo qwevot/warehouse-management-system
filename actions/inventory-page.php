@@ -10,7 +10,7 @@ require_once __DIR__ . '/../includes/inventory-data.php';
 $pdo = json_db();
 
 $mode = $_POST['mode'] ?? 'list';
-if (!in_array($mode, ['list', 'bin', 'generator'], true)) {
+if (!in_array($mode, ['list', 'bin', 'generator', 'units'], true)) {
     $mode = 'list';
 }
 

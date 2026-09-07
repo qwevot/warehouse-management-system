@@ -38,6 +38,10 @@ try {
     $pdo->prepare('UPDATE inventory_list SET quantity = quantity - ?, updated_at = NOW(), modified_by = ? WHERE id = ?')
         ->execute([$qty, $modifiedBy, $itemId]);
 
+    // Mark corresponding units as taken / issued in strict FIFO order (oldest first)
+    $pdo->prepare("UPDATE inventory_units SET status = 'taken', modified_by = ?, updated_at = NOW() WHERE inventory_id = ? AND status = 'available' AND deleted_at IS NULL ORDER BY id ASC LIMIT {$qty}")
+        ->execute([$modifiedBy, $itemId]);
+
     // Record the movement.
     $pdo->prepare('INSERT INTO stock_movements (item_id, type, quantity, issued_to, note, modified_by) VALUES (?, ?, ?, ?, ?, ?)')
         ->execute([$itemId, 'out', $qty, $issuedTo, $note, $modifiedBy]);

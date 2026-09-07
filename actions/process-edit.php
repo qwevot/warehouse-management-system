@@ -22,37 +22,40 @@ if ($item === null) {
     fail('Item not found.');
 }
 
-if ($name === '')     fail('Item name is required.');
+if ($name === '') fail('Item name is required.');
 
-// Keep the existing serial when left blank, otherwise validate uniqueness.
-$serial = $serialInput === '' ? $item['serial'] : $serialInput;
-if ($serial !== $item['serial']) {
-    $dup = $pdo->prepare('SELECT id FROM inventory_list WHERE serial = ? AND id <> ?');
-    $dup->execute([$serial, $id]);
-    if ($dup->fetch()) {
-        fail('That serial number is already in use.');
-    }
+// Only allow products that exist in Master Items (matched by name + brand).
+$st = $pdo->prepare('SELECT COUNT(*) FROM master_items WHERE deleted_at IS NULL AND product_name = ? AND COALESCE(brand, "") = ?');
+$st->execute([$name, $brand]);
+if ((int)$st->fetchColumn() === 0) {
+    fail('Please choose a product name and brand that exist in Master Items.');
 }
+
+// UPDATE: apply the edited fields to the item row.
+$modifiedBy = current_user_name();
+$oldQty = (int)$item['quantity'];
 
 // Replace the photo only when a new one was captured/uploaded.
 $photo = $item['photo'];
 
 if ($photoData !== '') {
-    $newPhoto = save_photo($photoData, $serial);
+    $newPhoto = save_photo($photoData, 'item_' . $id . '_' . time());
     if ($newPhoto === null) {
         fail('The new photo could not be saved. Please try again.');
     }
 
     delete_photo($item['photo']);
-
     $photo = $newPhoto;
 }
 
-// UPDATE: apply the edited fields to the item row.
-$modifiedBy = current_user_name();
 $pdo->prepare(
-    'UPDATE inventory_list SET name = ?, brand = ?, quantity = ?, location = ?, serial = ?, photo = ?, updated_at = NOW(), modified_by = ? WHERE id = ?'
-)->execute([$name, $brand, $quantity, $location, $serial, $photo, $modifiedBy, $id]);
+    'UPDATE inventory_list SET name = ?, brand = ?, quantity = ?, location = ?, photo = ?, updated_at = NOW(), modified_by = ? WHERE id = ?'
+)->execute([$name, $brand, $quantity, $location, $photo, $modifiedBy, $id]);
 
-header('Location: ' . BASE_URL . '/pages/index.php?edited=' . urlencode($serial));
+// If quantity increased, provision additional serialized units
+if ($quantity > $oldQty) {
+    provision_inventory_units($pdo, $id, $quantity - $oldQty, $modifiedBy);
+}
+
+header('Location: ' . BASE_URL . '/pages/index.php?edited=' . urlencode($name));
 exit;

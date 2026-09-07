@@ -586,7 +586,14 @@
         $("#detailPhoto").src = item.photo || "";
         $("#detailPhoto").style.display = item.photo ? "" : "none";
         $("#detailName").textContent = item.name;
-        $("#detailSerial").textContent = item.serial;
+
+        // Serial Number: only shown for serialized units, hidden on lot/batch cards
+        const serialBox = document.querySelector("#detailSerial") ? document.querySelector("#detailSerial").closest(".detail-box") : null;
+        $("#detailSerial").textContent = item.serial || "—";
+        if (serialBox) {
+            serialBox.style.display = item.serial ? "" : "none";
+        }
+
         $("#detailQty").textContent = item.quantity || 0;
         $("#detailLocation").textContent = item.location || "—";
         $("#detailDate").textContent = item.created_at || "—";
@@ -595,16 +602,26 @@
         status.textContent = item.status === "available" ? "Active" : "Inactive";
         status.className = "status " + item.status;
 
+        // Barcode (EAN-13)
+        const barcodeBox = document.querySelector("#detailBarcode") ? document.querySelector("#detailBarcode").closest(".detail-box") : null;
         $("#detailBarcode").innerHTML = "";
         if (item.barcode) {
             JsBarcode("#detailBarcode", item.barcode, {
                 format: "EAN13", displayValue: true, width: 2, height: 50, fontSize: 13
             });
+            if (barcodeBox) barcodeBox.style.display = "";
+        } else if (barcodeBox) {
+            barcodeBox.style.display = "none";
         }
 
+        // QR Code: Only display QR code on individual units (which have a unique serial number). Lots (index.php) do not show QR code.
+        const qrBox = document.querySelector("#detailQr") ? document.querySelector("#detailQr").closest(".detail-box") : null;
         $("#detailQr").innerHTML = "";
-        if (item.qr) {
+        if (item.serial && item.qr) {
             new QRCode($("#detailQr"), { text: item.qr, width: 132, height: 132 });
+            if (qrBox) qrBox.style.display = "";
+        } else if (qrBox) {
+            qrBox.style.display = "none";
         }
 
         openModal("itemModal");
@@ -803,11 +820,19 @@
         if (!item) return;
 
         $("#editId").value = item.id;
-        $("#edit_item_name").value = item.name;
-        const brandSel = $("#edit_brand");
-        brandSel.value = item.brand || "";
+        const nameInp = $("#edit_item_name");
+        if (nameInp) {
+            nameInp.value = item.name || "";
+            nameInp.dataset.valid = item.name || "";
+        }
+        const brandInp = $("#edit_brand");
+        if (brandInp) {
+            brandInp.value = item.brand || "";
+            brandInp.dataset.valid = item.brand || "";
+        }
         $("#edit_quantity").value = item.quantity || 1;
-        $("#edit_serial").value = item.serial || "";
+        const serialInput = $("#edit_serial");
+        if (serialInput) serialInput.value = item.serial || "";
 
         const loc = item.location || "";
         const locMatch = loc.match(/^S(\d+)-R(\d+)-C(\d+)$/);
@@ -953,40 +978,79 @@
     // item's details, barcode, and QR. Used by Scan, Stock In, Stock Out, Transfers.
     window.showItemCard = function (it) {
         if (!it) return;
-        document.getElementById("selCardName").textContent = it.name || "";
-        document.getElementById("selCardSerial").textContent = it.serial || "";
-        document.getElementById("selCardBrand").textContent = it.brand || "—";
-        document.getElementById("selCardQty").textContent = it.quantity || 0;
-        document.getElementById("selCardLocation").textContent = it.location || "—";
+        const nameEl = document.getElementById("selCardName");
+        if (nameEl) nameEl.textContent = it.name || "";
+
+        const badgeEl = document.getElementById("selCardBadge");
+        if (badgeEl) {
+            if (it.is_unit || it.serial) {
+                badgeEl.style.display = "inline-block";
+                badgeEl.innerHTML = '<span style="background:#4f46e5; color:#fff; font-size:11px; padding:2px 8px; border-radius:12px; font-weight:600; letter-spacing:0.5px;">INDIVIDUAL UNIT</span>';
+            } else {
+                badgeEl.style.display = "inline-block";
+                badgeEl.innerHTML = '<span style="background:var(--card-border, #e2e8f0); color:var(--text, #334155); font-size:11px; padding:2px 8px; border-radius:12px; font-weight:600; letter-spacing:0.5px;">BATCH / LOT</span>';
+            }
+        }
+
+        const serialRow = document.getElementById("selCardSerialRow");
+        const serialEl = document.getElementById("selCardSerial");
+        if (serialEl) {
+            serialEl.textContent = it.serial ? it.serial : "—";
+            if (serialRow) serialRow.style.display = "";
+        }
+
+        const brandEl = document.getElementById("selCardBrand");
+        if (brandEl) brandEl.textContent = it.brand || "—";
+
+        const qtyRow = document.getElementById("selCardQtyRow");
+        const qtyEl = document.getElementById("selCardQty");
+        if (qtyEl) {
+            if (it.is_unit) {
+                qtyEl.textContent = "1 Unit" + (it.batch_quantity !== undefined && it.batch_quantity !== null ? "  (Batch On-Hand: " + it.batch_quantity + ")" : "");
+            } else {
+                qtyEl.textContent = it.quantity !== undefined ? it.quantity : (it.batch_quantity || 0);
+            }
+            if (qtyRow) qtyRow.style.display = "";
+        }
+
+        const locEl = document.getElementById("selCardLocation");
+        if (locEl) locEl.textContent = it.location || "—";
+
         const statusEl = document.getElementById("selCardStatus");
-        const isActive = it.status === "available";
-        statusEl.textContent = isActive ? "ACTIVE" : "INACTIVE";
-        statusEl.className = "status " + (isActive ? "available" : "taken");
+        if (statusEl) {
+            const isAvail = it.status === "available";
+            statusEl.textContent = isAvail ? "AVAILABLE" : (it.status === "taken" ? "TAKEN / ISSUED" : "INACTIVE");
+            statusEl.className = "status " + (isAvail ? "available" : "taken");
+        }
 
         const photo = document.getElementById("selCardPhoto");
         const ph = document.getElementById("selCardPhotoPh");
         if (it.photo) {
-            photo.src = it.photo;
-            photo.style.display = "";
+            if (photo) { photo.src = it.photo; photo.style.display = ""; }
             if (ph) ph.style.display = "none";
         } else {
-            photo.style.display = "none";
+            if (photo) photo.style.display = "none";
             if (ph) ph.style.display = "";
         }
 
         const bc = document.getElementById("selCardBarcode");
-        bc.innerHTML = "";
-        if (it.barcode && window.JsBarcode) {
-            JsBarcode(bc, it.barcode, { format: "EAN13", displayValue: true, width: 2, height: 50, fontSize: 12 });
+        if (bc) {
+            bc.innerHTML = "";
+            if (it.barcode && window.JsBarcode) {
+                JsBarcode(bc, it.barcode, { format: "EAN13", displayValue: true, width: 2, height: 50, fontSize: 12 });
+            }
         }
 
         const qr = document.getElementById("selCardQr");
-        qr.innerHTML = "";
-        if (it.qr && window.QRCode) {
-            new QRCode(qr, { text: it.qr, width: 96, height: 96 });
+        if (qr) {
+            qr.innerHTML = "";
+            if (it.qr && window.QRCode) {
+                new QRCode(qr, { text: it.qr, width: 96, height: 96 });
+            }
         }
 
-        document.getElementById("selCard").style.display = "";
+        const selCard = document.getElementById("selCard");
+        if (selCard) selCard.style.display = "";
     };
 
 
@@ -1546,6 +1610,81 @@
             if (brandSelect) brandSelect.value = it.brand || "";
         },
     });
+
+    // Edit-item product-name search (Edit modal).
+    initSuggest({
+        input: "#edit_item_name",
+        box: "#editItemNameSuggest",
+        items: window.MASTER_ITEMS,
+        label: (it) => it.product_name + (it.brand ? "  ·  " + it.brand : ""),
+        search: (it) => (it.product_name || "") + " " + (it.brand || ""),
+        pick: (it) => {
+            const input = $("#edit_item_name");
+            if (input) {
+                input.value = it.product_name;
+                input.dataset.valid = it.product_name;
+            }
+            const brandInput = $("#edit_brand");
+            if (brandInput && it.brand) {
+                brandInput.value = it.brand;
+                brandInput.dataset.valid = it.brand;
+            }
+        },
+    });
+
+    // Enforce selection for Edit Item inputs on change / blur
+    const editItemNameEl = $("#edit_item_name");
+    if (editItemNameEl) {
+        editItemNameEl.addEventListener("change", () => {
+            const val = editItemNameEl.value.trim().toLowerCase();
+            const match = (window.MASTER_ITEMS || []).find((it) => it.product_name.toLowerCase() === val);
+            if (match) {
+                editItemNameEl.value = match.product_name;
+                editItemNameEl.dataset.valid = match.product_name;
+                if (match.brand && $("#edit_brand")) {
+                    $("#edit_brand").value = match.brand;
+                    $("#edit_brand").dataset.valid = match.brand;
+                }
+            } else {
+                editItemNameEl.value = editItemNameEl.dataset.valid || "";
+            }
+        });
+    }
+
+    const editBrandEl = $("#edit_brand");
+    if (editBrandEl) {
+        editBrandEl.addEventListener("change", () => {
+            const val = editBrandEl.value.trim().toLowerCase();
+            const allBrands = (Array.isArray(window.BRANDS) ? window.BRANDS : []);
+            const match = allBrands.find((b) => b.toLowerCase() === val);
+            if (match) {
+                editBrandEl.value = match;
+                editBrandEl.dataset.valid = match;
+            } else if (val === "") {
+                editBrandEl.value = "";
+                editBrandEl.dataset.valid = "";
+            } else {
+                editBrandEl.value = editBrandEl.dataset.valid || "";
+            }
+        });
+    }
+
+    // Edit form submission validation guard
+    const editFormEl = $("#editItemForm");
+    if (editFormEl) {
+        editFormEl.addEventListener("submit", (e) => {
+            const name = ($("#edit_item_name")?.value || "").trim();
+            const brand = ($("#edit_brand")?.value || "").trim();
+            const valid = (window.MASTER_ITEMS || []).some(
+                (it) => it.product_name.toLowerCase() === name.toLowerCase() && (it.brand || "").toLowerCase() === brand.toLowerCase()
+            );
+            if (!valid) {
+                e.preventDefault();
+                alert("Please select a valid Item Name and Brand from Master Data.");
+                return false;
+            }
+        });
+    }
 
     // Brand autocomplete for every brand field (brand-select.php). Each brand
     // input is wrapped in a .suggest-wrap with a sibling .suggest-box.
