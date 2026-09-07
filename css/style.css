@@ -380,7 +380,7 @@ body.sidebar-collapsed .main {
 }
 
 .quick-action-card.blue {
-    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+    background: linear-gradient(135deg, #2d59d4 0%, #154eca 100%);
     box-shadow: 0 4px 16px rgba(37, 99, 235, 0.25);
 }
 
@@ -389,7 +389,7 @@ body.sidebar-collapsed .main {
 }
 
 .quick-action-card.red {
-    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    background: linear-gradient(135deg, #ca3939 0%, #bd1c1c 100%);
     box-shadow: 0 4px 16px rgba(239, 68, 68, 0.25);
 }
 
@@ -398,7 +398,7 @@ body.sidebar-collapsed .main {
 }
 
 .quick-action-card.yellow {
-    background: linear-gradient(135deg, #eab308 0%, #ca8a04 100%);
+    background: linear-gradient(135deg, #c0930c 0%, #ca8a04 100%);
     box-shadow: 0 4px 16px rgba(234, 179, 8, 0.25);
 }
 

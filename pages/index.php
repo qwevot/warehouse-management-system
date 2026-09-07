@@ -16,9 +16,9 @@ $dbError = '';
 
 try {
     $pdo = db();
-    // READ: one page of non-deleted inventory records matching the current
-    // search/filter/sort, newest first by default.
-    $result = inventory_fetch($pdo, $mode, $state);
+    // READ: all non-deleted inventory records matching the current
+    // search/filter/sort, for full client-side sorting and pagination.
+    $result = inventory_fetch($pdo, $mode, $state, true);
     $rows  = $result['rows'];
     $total = $result['total'];
     $state['page'] = $result['page'];

@@ -30,11 +30,34 @@ try {
     // Items for the quick search (feeds window.STOCK_ITEMS).
     $items = $pdo->query("SELECT id, name, brand, serial, quantity, location, barcode, qr, status, photo FROM inventory_list WHERE deleted_at IS NULL ORDER BY name ASC")->fetchAll();
 
+    // Low stock items based on master items catalog (threshold <= 5 units across all active inventory)
+    $lowStockThreshold = 5;
+    $stmtLow = $pdo->prepare("
+        SELECT mi.id, mi.product_code, mi.product_name, mi.brand, mi.product_class,
+               (SELECT COALESCE(SUM(m.quantity), 0) 
+                FROM inventory_list m 
+                WHERE m.name = mi.product_name COLLATE utf8mb4_general_ci 
+                  AND COALESCE(m.brand, '') = mi.brand COLLATE utf8mb4_general_ci 
+                  AND m.deleted_at IS NULL 
+                  AND m.status = 'available') AS total_qty
+        FROM master_items mi
+        WHERE mi.deleted_at IS NULL
+        HAVING total_qty <= ?
+        ORDER BY total_qty ASC, mi.product_name ASC
+    ");
+    $stmtLow->execute([$lowStockThreshold]);
+    $lowStockItems = $stmtLow->fetchAll();
+    $lowStockCount = count($lowStockItems);
+
     // Recent activity (limited to latest 30 movements for performance).
     $movements = fetch_movements($pdo, 30);
 } catch (Exception $e) {
     $dbError = 'Could not load dashboard data from the database.';
 }
+
+$lowStockItems = $lowStockItems ?? [];
+$lowStockCount = $lowStockCount ?? 0;
+$lowStockThreshold = $lowStockThreshold ?? 5;
 
 $typeLabels = movement_type_labels();
 
@@ -119,6 +142,64 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
 
 <?php include __DIR__ . '/../includes/item-card-select.php'; ?>
 
+<?php if (!empty($lowStockItems)): ?>
+<section class="inventory-section low-stock-section" id="lowStockSection" style="margin-bottom: 24px; border: 1.5px solid var(--amber); background: #ffffff; border-radius: 12px; overflow: hidden; padding: 0; box-shadow: 0 4px 16px rgba(245, 158, 11, 0.15);">
+    <button type="button" class="low-stock-toggle" id="lowStockToggle" onclick="toggleLowStockTable()" aria-expanded="false" style="width:100%; display:flex; justify-content:space-between; align-items:center; background:var(--amber); border:none; padding:14px 20px; cursor:pointer; text-align:left; font-family:inherit; color:#ffffff;">
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+            <div style="display:flex; align-items:center; justify-content:center; width:30px; height:30px; border-radius:8px; background:rgba(255,255,255,0.25); color:#ffffff; flex-shrink:0;">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-size:15px; font-weight:700; color:#ffffff;">Low Stock Alerts</span>
+                <span style="font-size:12px; background:#ffffff; color:var(--amber-ink); padding:2px 8px; border-radius:999px; font-weight:800; box-shadow:0 1px 4px rgba(0,0,0,0.1);">
+                    <?php echo $lowStockCount; ?>
+                </span>
+            </div>
+            <span style="font-size:12.5px; color:rgba(255,255,255,0.9);">
+                (&le; <?php echo $lowStockThreshold; ?> units remaining)
+            </span>
+        </div>
+        <div style="display:flex; align-items:center; gap:6px; color:#ffffff; font-size:13px; font-weight:600;">
+            <span id="lowStockToggleText">Show Details</span>
+            <svg id="lowStockChevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="transition: transform 0.2s ease;">
+                <path d="M6 9l6 6 6-6"/>
+            </svg>
+        </div>
+    </button>
+
+    <div class="table-container" id="lowStockTableContainer" style="display:none; border-top:1px solid rgba(0,0,0,0.08); background:#ffffff; margin:0; padding: 16px; 16px 16px; 16px">
+        <table>
+            <thead>
+                <tr>
+                    <th class="no-col">No.</th>
+                    <th>Product Code</th>
+                    <th>Product Name</th>
+                    <th>Brand</th>
+                    <th>Product Class</th>
+                    <th>Total Qty</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($lowStockItems as $idx => $item): ?>
+                    <tr>
+                        <td class="no-col"><?php echo $idx + 1; ?></td>
+                        <td><code><?php echo e($item['product_code']); ?></code></td>
+                        <td><?php echo e($item['product_name']); ?></td>
+                        <td><?php echo dash($item['brand']); ?></td>
+                        <td><?php echo dash($item['product_class']); ?></td>
+                        <td>
+                            <strong style="color:<?php echo (int)$item['total_qty'] === 0 ? 'var(--red-ink)' : 'var(--amber-ink)'; ?>;">
+                                <?php echo (int)$item['total_qty']; ?>
+                            </strong>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+</section>
+<?php endif; ?>
+
 <section class="inventory-section">
     <div class="section-header">
         <div class="section-title">Recent Activity</div>
@@ -185,6 +266,30 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
         window.showItemCard(item);
         return true;
     });
+
+    // Toggle Low Stock Alert table visibility
+    window.toggleLowStockTable = function (forceOpen) {
+        const container = document.getElementById("lowStockTableContainer");
+        const chevron   = document.getElementById("lowStockChevron");
+        const toggleBtn = document.getElementById("lowStockToggle");
+        const toggleTxt = document.getElementById("lowStockToggleText");
+        if (!container) return;
+
+        const isHidden = container.style.display === "none" || container.style.display === "";
+        const open = (typeof forceOpen === "boolean") ? forceOpen : isHidden;
+
+        if (open) {
+            container.style.display = "block";
+            if (chevron) chevron.style.transform = "rotate(180deg)";
+            if (toggleTxt) toggleTxt.textContent = "Hide Details";
+            if (toggleBtn) toggleBtn.setAttribute("aria-expanded", "true");
+        } else {
+            container.style.display = "none";
+            if (chevron) chevron.style.transform = "rotate(0deg)";
+            if (toggleTxt) toggleTxt.textContent = "Show Details";
+            if (toggleBtn) toggleBtn.setAttribute("aria-expanded", "false");
+        }
+    };
 </script>
 
 <script>

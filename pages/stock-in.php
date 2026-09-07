@@ -91,6 +91,14 @@ include __DIR__ . '/../includes/header.php';
         const form = document.getElementById("stockForm");
         if (form) form.scrollIntoView({ behavior: "smooth" });
     };
+
+    document.addEventListener("DOMContentLoaded", function () {
+        const urlParams = new URLSearchParams(window.location.search);
+        const itemId = parseInt(urlParams.get('item_id'), 10);
+        if (itemId) {
+            window.pickStockItem(itemId);
+        }
+    });
 </script>
 
 <?php include __DIR__ . '/../includes/footer.php'; ?>

@@ -24,41 +24,46 @@ if (min($quantities) < 1) {
     json_fail('Each part quantity must be at least 1.');
 }
 
-$item = find_item($pdo, $itemId);
-
-if ($item === null || $item['deleted_at'] !== null) {
-    json_fail('Item not found.');
-}
-
-$rawLoc = $_POST['locations'] ?? [];
-if (is_string($rawLoc)) {
-    $rawLoc = (strpos($rawLoc, '||') !== false) ? explode('||', $rawLoc) : explode(',', $rawLoc);
-}
-if (!is_array($rawLoc)) {
-    $rawLoc = [];
-}
-$parsedLocations = array_map('trim', $rawLoc);
-
-$defaultLoc = trim($item['location'] ?? '') !== '' ? trim($item['location']) : 'N/A';
-$locations = [];
-for ($i = 0; $i < count($quantities); $i++) {
-    $loc = $parsedLocations[$i] ?? '';
-    $locations[] = ($loc !== '') ? $loc : $defaultLoc;
-}
-
-$qty = max(0, (int)$item['quantity']);
-
-if (array_sum($quantities) !== $qty) {
-    json_fail('Part quantities must add up to the item\'s quantity (' . $qty . ').');
-}
-
 $pdo->beginTransaction();
 
 try {
+    $st = $pdo->prepare('SELECT * FROM inventory_list WHERE id = ? FOR UPDATE');
+    $st->execute([$itemId]);
+    $item = $st->fetch();
+
+    if ($item === false || $item['deleted_at'] !== null) {
+        $pdo->rollBack();
+        json_fail('Item not found.');
+    }
+
+    $rawLoc = $_POST['locations'] ?? [];
+    if (is_string($rawLoc)) {
+        $rawLoc = (strpos($rawLoc, '||') !== false) ? explode('||', $rawLoc) : explode(',', $rawLoc);
+    }
+    if (!is_array($rawLoc)) {
+        $rawLoc = [];
+    }
+    $parsedLocations = array_map('trim', $rawLoc);
+
+    $defaultLoc = trim($item['location'] ?? '') !== '' ? trim($item['location']) : 'N/A';
+    $locations = [];
+    for ($i = 0; $i < count($quantities); $i++) {
+        $loc = $parsedLocations[$i] ?? '';
+        $locations[] = ($loc !== '') ? $loc : $defaultLoc;
+    }
+
+    $qty = max(0, (int)$item['quantity']);
+
+    if (array_sum($quantities) !== $qty) {
+        $pdo->rollBack();
+        json_fail('Part quantities must add up to the item\'s quantity (' . $qty . ').');
+    }
+
     $modifiedBy = current_user_name();
 
     // Original item keeps the first part.
-    $pdo->prepare('UPDATE inventory_list SET quantity = ?, location = ?, updated_at = NOW(), modified_by = ? WHERE id = ?')->execute([$quantities[0], $locations[0], $modifiedBy, $item['id']]);
+    $pdo->prepare('UPDATE inventory_list SET quantity = ?, location = ?, updated_at = NOW(), modified_by = ? WHERE id = ?')
+        ->execute([$quantities[0], $locations[0], $modifiedBy, $item['id']]);
 
     // Every remaining part becomes a new item.
     for ($i = 1; $i < count($quantities); $i++) {
@@ -75,7 +80,9 @@ try {
 
     $pdo->commit();
 } catch (Exception $e) {
-    $pdo->rollBack();
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
     json_fail('Could not split the item.');
 }
 

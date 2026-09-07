@@ -26,6 +26,10 @@ $inventorySortOptions = [
     ['oldest', 'Oldest First'],
     ['name', 'Name A-Z'],
     ['nameDesc', 'Name Z-A'],
+    ['created-desc', 'Ref. Date (Newest)'],
+    ['created-asc', 'Ref. Date (Oldest)'],
+    ['modified-desc', 'Last Modified (Newest)'],
+    ['modified-asc', 'Last Modified (Oldest)'],
 ];
 
 $axisPanelHtml = '
@@ -109,8 +113,26 @@ $inventoryPagination = buildPagination('', [
                 <?php if (col_on($tableColumns, 'status')): ?><th>Status</th><?php endif; ?>
                 <?php if (col_on($tableColumns, 'serial')): ?><th>Serial No.</th><?php endif; ?>
                 <?php if (col_on($tableColumns, 'barcode')): ?><th>Barcode No.</th><?php endif; ?>
-                <?php if (col_on($tableColumns, 'registered')): ?><th>Ref. Date</th><?php endif; ?>
-                <?php if (col_on($tableColumns, 'last_modified')): ?><th>Last Modified</th><?php endif; ?>
+                <?php if (col_on($tableColumns, 'registered')): ?>
+                    <th class="sortable" data-sort="created" data-default-dir="desc" title="Sort by Ref. Date">
+                        <div class="th-sort-inner">
+                            <span>Ref. Date</span>
+                            <svg class="sort-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </div>
+                    </th>
+                <?php endif; ?>
+                <?php if (col_on($tableColumns, 'last_modified')): ?>
+                    <th class="sortable" data-sort="modified" data-default-dir="desc" title="Sort by Last Modified">
+                        <div class="th-sort-inner">
+                            <span>Last Modified</span>
+                            <svg class="sort-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </div>
+                    </th>
+                <?php endif; ?>
                 <?php if (col_on($tableColumns, 'modified_by')): ?><th>Modified By</th><?php endif; ?>
                 <?php if (col_on($tableColumns, 'bin_note')): ?><th>Bin Note</th><?php endif; ?>
             </tr>
@@ -137,6 +159,7 @@ $inventoryPagination = buildPagination('', [
                         data-brand="<?php echo e($item['brand']); ?>"
                         data-loc="<?php echo e($item['location']); ?>"
                         data-created="<?php echo (int)strtotime((string)$item['created_at']); ?>"
+                        data-modified="<?php echo !empty($item['updated_at']) ? (int)strtotime((string)$item['updated_at']) : (int)strtotime((string)$item['created_at']); ?>"
                     >
                         <?php if ($rowSelectable): ?>
                             <td class="merge-check-col" data-label="">

@@ -13,7 +13,7 @@ function inventory_columns(string $mode): array
         case 'bin':
             return ['no', 'photo', 'item', 'brand', 'quantity', 'serial', 'bin_note', 'status', 'last_modified', 'modified_by', 'action'];
         case 'generator':
-            return ['no', 'photo', 'item', 'quantity', 'serial', 'location', 'barcode', 'action'];
+            return ['no', 'photo', 'item', 'brand','quantity', 'serial', 'location', 'barcode', 'action'];
         default:
             return ['no', 'action', 'photo', 'item', 'brand', 'quantity', 'location', 'status', 'serial', 'barcode', 'registered', 'last_modified', 'modified_by'];
     }
@@ -33,7 +33,7 @@ function inventory_state_from_input(array $in): array
     if (!in_array($size, [5, 10, 15, 20, 25, 50], true)) $size = 10;
 
     $sort = (string)($in['sort'] ?? 'newest');
-    if (!in_array($sort, ['newest', 'oldest', 'name', 'nameDesc'], true)) $sort = 'newest';
+    if (!in_array($sort, ['newest', 'oldest', 'name', 'nameDesc', 'created-desc', 'created-asc', 'modified-desc', 'modified-asc', 'created_desc', 'created_asc', 'modified_desc', 'modified_asc'], true)) $sort = 'newest';
 
     $list = function ($key) use ($in) {
         $raw = $in[$key] ?? '';
@@ -107,10 +107,18 @@ function inventory_fetch(PDO $pdo, string $mode, array $state, bool $all = false
     $whereSql = implode(' AND ', $where);
 
     $orderMap = [
-        'newest'   => 'id DESC',
-        'oldest'   => 'id ASC',
-        'name'     => 'name ASC',
-        'nameDesc' => 'name DESC',
+        'newest'        => 'id DESC',
+        'oldest'        => 'id ASC',
+        'name'          => 'name ASC',
+        'nameDesc'      => 'name DESC',
+        'created-desc'  => 'created_at DESC, id DESC',
+        'created-asc'   => 'created_at ASC, id ASC',
+        'modified-desc' => 'COALESCE(updated_at, created_at) DESC, id DESC',
+        'modified-asc'  => 'COALESCE(updated_at, created_at) ASC, id ASC',
+        'created_desc'  => 'created_at DESC, id DESC',
+        'created_asc'   => 'created_at ASC, id ASC',
+        'modified_desc' => 'COALESCE(updated_at, created_at) DESC, id DESC',
+        'modified_asc'  => 'COALESCE(updated_at, created_at) ASC, id ASC',
     ];
     $order = $orderMap[$state['sort'] ?? 'newest'] ?? 'id DESC';
 
@@ -241,8 +249,9 @@ function render_inventory_rows(array $rows, string $mode, int $startIndex = 0): 
 
     foreach ($rows as $i => $item) {
         $no = $startIndex + $i + 1;
+        $modTs = !empty($item['updated_at']) ? (int)strtotime((string)$item['updated_at']) : (int)strtotime((string)$item['created_at']);
 
-        $html .= '<tr class="inventory-row" data-id="' . (int)$item['id'] . '" data-status="' . e($item['status']) . '" data-brand="' . e($item['brand']) . '" data-loc="' . e($item['location']) . '" data-created="' . (int)strtotime((string)$item['created_at']) . '">';
+        $html .= '<tr class="inventory-row" data-id="' . (int)$item['id'] . '" data-status="' . e($item['status']) . '" data-brand="' . e($item['brand']) . '" data-loc="' . e($item['location']) . '" data-created="' . (int)strtotime((string)$item['created_at']) . '" data-modified="' . $modTs . '">';
 
         if ($selectable) {
             $html .= '<td class="merge-check-col" data-label=""><input type="checkbox" class="row-select" value="' . (int)$item['id'] . '"></td>';

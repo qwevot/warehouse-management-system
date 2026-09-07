@@ -158,6 +158,26 @@
             };
             if (sort === "name") return nameOf(a).localeCompare(nameOf(b));
             if (sort === "nameDesc") return nameOf(b).localeCompare(nameOf(a));
+            if (sort === "created-desc" || sort === "created_desc") {
+                const tsA = parseInt(a.dataset.created, 10) || 0;
+                const tsB = parseInt(b.dataset.created, 10) || 0;
+                return tsB - tsA || idB - idA;
+            }
+            if (sort === "created-asc" || sort === "created_asc") {
+                const tsA = parseInt(a.dataset.created, 10) || 0;
+                const tsB = parseInt(b.dataset.created, 10) || 0;
+                return tsA - tsB || idA - idB;
+            }
+            if (sort === "modified-desc" || sort === "modified_desc") {
+                const tsA = parseInt(a.dataset.modified, 10) || parseInt(a.dataset.created, 10) || 0;
+                const tsB = parseInt(b.dataset.modified, 10) || parseInt(b.dataset.created, 10) || 0;
+                return tsB - tsA || idB - idA;
+            }
+            if (sort === "modified-asc" || sort === "modified_asc") {
+                const tsA = parseInt(a.dataset.modified, 10) || parseInt(a.dataset.created, 10) || 0;
+                const tsB = parseInt(b.dataset.modified, 10) || parseInt(b.dataset.created, 10) || 0;
+                return tsA - tsB || idA - idB;
+            }
             return 0;
         });
         return rows;
@@ -1298,8 +1318,27 @@
         $("#mergeBarcodeWrap").style.display = mode === "new" ? "" : "none";
     };
 
+    function canSelectForMerge(itemId) {
+        const checked = $all(".row-select:checked").map((cb) => parseInt(cb.value, 10)).filter((id) => id !== itemId);
+        if (checked.length === 0) return true;
+        const items = window.INVENTORY || [];
+        const firstItem = items.find((it) => checked.includes(it.id));
+        const targetItem = items.find((it) => it.id === itemId);
+        if (!firstItem || !targetItem) return true;
+        const nameMatch = (firstItem.name || "").trim().toLowerCase() === (targetItem.name || "").trim().toLowerCase();
+        const brandMatch = (firstItem.brand || "").trim().toLowerCase() === (targetItem.brand || "").trim().toLowerCase();
+        return nameMatch && brandMatch;
+    }
+
     document.addEventListener("change", (e) => {
         if (e.target && e.target.classList && e.target.classList.contains("row-select")) {
+            if (document.body.classList.contains("merge-mode") && e.target.checked) {
+                if (!canSelectForMerge(parseInt(e.target.value, 10))) {
+                    e.target.checked = false;
+                    alert("You can only merge items with the same product name and brand.");
+                    return;
+                }
+            }
             // Split takes exactly one item: checking one unchecks the rest.
             if (document.body.classList.contains("split-mode") && e.target.checked) {
                 $all(".row-select").forEach((cb) => {
@@ -1334,7 +1373,12 @@
             });
             refreshSplitBase();
         } else if (isMerge) {
-            input.checked = !input.checked;
+            const nextChecked = !input.checked;
+            if (nextChecked && !canSelectForMerge(parseInt(input.value, 10))) {
+                alert("You can only merge items with the same product name and brand.");
+                return;
+            }
+            input.checked = nextChecked;
             refreshMergeTargets();
         }
 
@@ -1358,6 +1402,16 @@
     window.submitMerge = function () {
         const ids = $all(".row-select:checked").map((cb) => parseInt(cb.value, 10));
         if (ids.length < 2) return alert("Select at least 2 items to merge.");
+
+        const selectedItems = (window.INVENTORY || []).filter((it) => ids.includes(it.id));
+        if (selectedItems.length > 0) {
+            const first = selectedItems[0];
+            const mismatch = selectedItems.some((it) =>
+                (it.name || "").trim().toLowerCase() !== (first.name || "").trim().toLowerCase() ||
+                (it.brand || "").trim().toLowerCase() !== (first.brand || "").trim().toLowerCase()
+            );
+            if (mismatch) return alert("You can only merge items with the same product name and brand.");
+        }
 
         const mode = document.querySelector('input[name="mergeMode"]:checked').value;
         const data = { mode: mode, ids: ids };
@@ -1513,27 +1567,8 @@
     // Populate the axis filter search inputs with the used values.
     setupAxisFilters();
 
-    // Populate the table on first load, restoring the page the user was on
-    // so actions (delete, split, merge, import) don't jump back to page 1.
-    // The page size follows whatever is selected in the Rows dropdown.
-    const pageSizeSel = $("#pageSizeSelect");
-    if (pageSizeSel) PAGE_SIZE = parseInt(pageSizeSel.value, 10) || DEFAULT_PAGE_SIZE;
-
-    currentPage = parseInt(sessionStorage.getItem("invPage"), 10) || 1;
-    renderInventory(false);
-
-    // Wire the shared toolbar/pagination controls (rendered by buildToolbar /
-    // buildPagination) to the inventory renderer. These exist only on pages
-    // that include inventory-table.php.
-    (function wireInventoryToolbar() {
-        const bind = (sel, evt, fn) => { const el = $(sel); if (el) el.addEventListener(evt, fn); };
-        bind("#searchInput", "input", window.filterInventory);
-        bind("#sortSelect", "change", window.filterInventory);
-        bind("#pagePrev", "click", window.pagePrev);
-        bind("#pageNext", "click", window.pageNext);
-        bind("#pageSizeSelect", "change", window.changePageSize);
-        bind("#filterBtn", "click", (e) => window.toggleFilterPanel(e));
-    })();
+    // Show any flash queued by a previous AJAX action (split/merge/etc.).
+    consumeFlash();
 
     // Show any flash queued by a previous AJAX action (split/merge/etc.).
     consumeFlash();
@@ -1619,8 +1654,11 @@
             let spec = null;
             if (currentSortKey && cfg.sorters) {
                 const combinedKey = currentSortKey + '_' + currentSortDir;
+                const dashKey     = currentSortKey + '-' + currentSortDir;
                 if (cfg.sorters[combinedKey]) {
                     spec = cfg.sorters[combinedKey];
+                } else if (cfg.sorters[dashKey]) {
+                    spec = cfg.sorters[dashKey];
                 } else if (cfg.sorters[currentSortKey]) {
                     spec = cfg.sorters[currentSortKey];
                 }
@@ -1858,20 +1896,17 @@
         if (cfg.exportFn) window[cfg.exportFn] = doExport;
 
         if (searchInput) searchInput.addEventListener("input", () => debouncedRender(true));
-        if (sortSelect)  sortSelect.addEventListener("change", () => render(false));
-        if (filterBtn && filterWrap) {
-            filterBtn.addEventListener("click", (e) => { e.stopPropagation(); filterWrap.classList.toggle("open"); });
-        }
-        document.addEventListener("click", (e) => {
-            if (filterWrap && !filterWrap.contains(e.target)) filterWrap.classList.remove("open");
-        });
-        if (pagePrev) pagePrev.addEventListener("click", () => { if (currentPage > 1) { currentPage--; render(false); } });
-        if (pageNext) pageNext.addEventListener("click", () => { if (currentPage < Math.max(1, Math.ceil(allRows().length / pageSize))) { currentPage++; render(false); } });
-        if (pageSizeSelect) pageSizeSelect.addEventListener("change", () => {
-            const v = parseInt(pageSizeSelect.value, 10);
-            if (v > 0) pageSize = v;
-            currentPage = 1;
-            render(true);
+        if (sortSelect) sortSelect.addEventListener("change", () => {
+            const val = sortSelect.value || "";
+            currentSortKey = null;
+            sortHeaders.forEach((h) => h.classList.remove('active', 'asc', 'desc'));
+            const matchedHeader = sortHeaders.find((h) => val.startsWith(h.dataset.sort));
+            if (matchedHeader) {
+                currentSortKey = matchedHeader.dataset.sort;
+                currentSortDir = (val.endsWith('asc') || val.endsWith('_asc')) ? 'asc' : 'desc';
+                matchedHeader.classList.add('active', currentSortDir);
+            }
+            render(false);
         });
 
         const sortHeaders = qa(cfg.sortHeaderSelector || 'th.sortable');
@@ -1890,9 +1925,61 @@
                 }
                 sortHeaders.forEach((h) => h.classList.remove('active', 'asc', 'desc'));
                 th.classList.add('active', currentSortDir);
+                if (sortSelect) {
+                    const candidate1 = sortKey + '_' + currentSortDir;
+                    const candidate2 = sortKey + '-' + currentSortDir;
+                    const match = Array.from(sortSelect.options).find((opt) => opt.value === candidate1 || opt.value === candidate2);
+                    if (match) sortSelect.value = match.value;
+                }
                 render(false);
             });
         });
+
+        if (pageSizeSelect) {
+            pageSizeSelect.addEventListener("change", () => {
+                const v = parseInt(pageSizeSelect.value, 10);
+                if (v > 0) pageSize = v;
+                render(true);
+            });
+        }
+
+        if (pagePrev) {
+            pagePrev.addEventListener("click", () => {
+                if (currentPage > 1) {
+                    currentPage--;
+                    render(false);
+                }
+            });
+        }
+
+        if (pageNext) {
+            pageNext.addEventListener("click", () => {
+                const list = allRows();
+                const rawQuery = searchInput ? searchInput.value.trim() : "";
+                const query = caseSensitive ? rawQuery : rawQuery.toLowerCase();
+                const total = list.filter((tr) => {
+                    const text = tr._searchText !== undefined ? tr._searchText : (caseSensitive ? tr.textContent : tr.textContent.toLowerCase());
+                    return text.includes(query) && rowMatchesFilters(tr);
+                }).length;
+                const pageCount = Math.max(1, Math.ceil(total / pageSize));
+                if (currentPage < pageCount) {
+                    currentPage++;
+                    render(false);
+                }
+            });
+        }
+
+        if (filterBtn && filterWrap) {
+            filterBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                filterWrap.classList.toggle("open");
+            });
+            document.addEventListener("click", (e) => {
+                if (filterWrap.classList.contains("open") && !filterWrap.contains(e.target)) {
+                    filterWrap.classList.remove("open");
+                }
+            });
+        }
 
         buildFilters();
         render(true);
@@ -1957,4 +2044,74 @@
             dataText: function (r) { return r.item_name + ' ' + r.type + ' ' + (r.note || '') + ' ' + (r.issued_to || '') + ' ' + (r.modified_by || ''); },
         });
     };
+
+    window.initInventoryTable = function () {
+        if (!document.getElementById("inventoryTable")) return;
+        initDataTable({
+            searchInput:    '#searchInput',
+            sortSelect:     '#sortSelect',
+            tbody:          '#inventoryTable',
+            row:            '.inventory-row',
+            filterWrap:     '#filterWrap',
+            filterBtn:      '#filterBtn',
+            filterPanel:    '#filterPanel',
+            filterBadge:    '#filterBadge',
+            pagePrev:       '#pagePrev',
+            pageNext:       '#pageNext',
+            pageNumbers:    '#pageNumbers',
+            pageRange:      '#pageRange',
+            pagination:     '#pagination',
+            pageSizeSelect: '#pageSizeSelect',
+            exportFn:       'exportTable',
+            exportName:     'inventory',
+            defaultSortKey: 'newest',
+            defaultSortDir: 'desc',
+            sorters: {
+                'newest': function (a, b) { return (parseInt(b.dataset.id, 10) || 0) - (parseInt(a.dataset.id, 10) || 0); },
+                'oldest': function (a, b) { return (parseInt(a.dataset.id, 10) || 0) - (parseInt(b.dataset.id, 10) || 0); },
+                'name': function (a, b) {
+                    const elA = a.querySelector(".item-name");
+                    const elB = b.querySelector(".item-name");
+                    return (elA ? elA.textContent.trim() : "").localeCompare(elB ? elB.textContent.trim() : "");
+                },
+                'nameDesc': function (a, b) {
+                    const elA = a.querySelector(".item-name");
+                    const elB = b.querySelector(".item-name");
+                    return (elB ? elB.textContent.trim() : "").localeCompare(elA ? elA.textContent.trim() : "");
+                },
+                'created_desc':  function (a, b) { return ((parseInt(b.dataset.created, 10) || 0) - (parseInt(a.dataset.created, 10) || 0)) || ((parseInt(b.dataset.id, 10) || 0) - (parseInt(a.dataset.id, 10) || 0)); },
+                'created_asc':   function (a, b) { return ((parseInt(a.dataset.created, 10) || 0) - (parseInt(b.dataset.created, 10) || 0)) || ((parseInt(a.dataset.id, 10) || 0) - (parseInt(b.dataset.id, 10) || 0)); },
+                'created-desc':  function (a, b) { return ((parseInt(b.dataset.created, 10) || 0) - (parseInt(a.dataset.created, 10) || 0)) || ((parseInt(b.dataset.id, 10) || 0) - (parseInt(a.dataset.id, 10) || 0)); },
+                'created-asc':   function (a, b) { return ((parseInt(a.dataset.created, 10) || 0) - (parseInt(b.dataset.created, 10) || 0)) || ((parseInt(a.dataset.id, 10) || 0) - (parseInt(b.dataset.id, 10) || 0)); },
+                'modified_desc': function (a, b) {
+                    const tA = parseInt(a.dataset.modified, 10) || parseInt(a.dataset.created, 10) || 0;
+                    const tB = parseInt(b.dataset.modified, 10) || parseInt(b.dataset.created, 10) || 0;
+                    return (tB - tA) || ((parseInt(b.dataset.id, 10) || 0) - (parseInt(a.dataset.id, 10) || 0));
+                },
+                'modified_asc':  function (a, b) {
+                    const tA = parseInt(a.dataset.modified, 10) || parseInt(a.dataset.created, 10) || 0;
+                    const tB = parseInt(b.dataset.modified, 10) || parseInt(b.dataset.created, 10) || 0;
+                    return (tA - tB) || ((parseInt(a.dataset.id, 10) || 0) - (parseInt(b.dataset.id, 10) || 0));
+                },
+                'modified-desc': function (a, b) {
+                    const tA = parseInt(a.dataset.modified, 10) || parseInt(a.dataset.created, 10) || 0;
+                    const tB = parseInt(b.dataset.modified, 10) || parseInt(b.dataset.created, 10) || 0;
+                    return (tB - tA) || ((parseInt(b.dataset.id, 10) || 0) - (parseInt(a.dataset.id, 10) || 0));
+                },
+                'modified-asc':  function (a, b) {
+                    const tA = parseInt(a.dataset.modified, 10) || parseInt(a.dataset.created, 10) || 0;
+                    const tB = parseInt(b.dataset.modified, 10) || parseInt(b.dataset.created, 10) || 0;
+                    return (tA - tB) || ((parseInt(a.dataset.id, 10) || 0) - (parseInt(b.dataset.id, 10) || 0));
+                },
+            },
+            data: window.INVENTORY,
+            dataText: function (r) {
+                return (r.name || '') + ' ' + (r.brand || '') + ' ' + (r.serial || '') + ' ' + (r.barcode || '') + ' ' + (r.location || '');
+            },
+        });
+    };
+
+    if (document.getElementById("inventoryTable")) {
+        window.initInventoryTable();
+    }
 })();

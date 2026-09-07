@@ -34,30 +34,55 @@ if ($mode === 'existing') {
     }
 }
 
-$rows = [];
-foreach ($ids as $id) {
-    $row = find_item($pdo, $id);
-    if ($row === null || $row['deleted_at'] !== null) {
-        json_fail('One or more selected items could not be found.');
-    }
-    $rows[] = $row;
-}
-
-$totalQty = 0;
-foreach ($rows as $row) {
-    $totalQty += max(0, (int)$row['quantity']);
-}
-
 $pdo->beginTransaction();
 
 try {
+    $inPlaceholders = implode(',', array_fill(0, count($ids), '?'));
+    $st = $pdo->prepare("SELECT * FROM inventory_list WHERE id IN ($inPlaceholders) FOR UPDATE");
+    $st->execute($ids);
+    $rows = $st->fetchAll();
+
+    if (count($rows) !== count($ids)) {
+        $pdo->rollBack();
+        json_fail('One or more selected items could not be found.');
+    }
+
+    foreach ($rows as $row) {
+        if ($row['deleted_at'] !== null) {
+            $pdo->rollBack();
+            json_fail('One or more selected items have been deleted.');
+        }
+    }
+
+    $first = $rows[0];
+    foreach ($rows as $row) {
+        if (
+            strcasecmp(trim($row['name'] ?? ''), trim($first['name'] ?? '')) !== 0 ||
+            strcasecmp(trim($row['brand'] ?? ''), trim($first['brand'] ?? '')) !== 0
+        ) {
+            $pdo->rollBack();
+            json_fail('Only items with the same product name and brand can be merged.');
+        }
+    }
+
+    $totalQty = 0;
+    foreach ($rows as $row) {
+        $totalQty += max(0, (int)$row['quantity']);
+    }
+
     $modifiedBy = current_user_name();
 
     if ($mode === 'existing') {
-        $target = find_item($pdo, $targetId);
-        if ($target === null || $target['deleted_at'] !== null) {
+        $target = null;
+        foreach ($rows as $row) {
+            if ((int)$row['id'] === $targetId) {
+                $target = $row;
+                break;
+            }
+        }
+        if ($target === null) {
             $pdo->rollBack();
-            json_fail('Target item not found.');
+            json_fail('Target item not found among locked items.');
         }
 
         // The target keeps its own barcode and absorbs the summed quantity of
@@ -70,8 +95,7 @@ try {
             $pdo->prepare("UPDATE inventory_list SET deleted_at = NOW(), status = 'taken' WHERE id = ?")->execute([$id]);
         }
     } else {
-        $first = $rows[0];
-        $name  = trim($_POST['name'] ?? '');
+        $name = trim($_POST['name'] ?? '');
         if ($name === '') {
             $name = $first['name'];
         }
@@ -99,7 +123,9 @@ try {
 
     $pdo->commit();
 } catch (Exception $e) {
-    $pdo->rollBack();
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
     json_fail('Could not merge the items.');
 }
 

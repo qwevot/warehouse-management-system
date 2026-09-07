@@ -83,7 +83,7 @@ $deleteIcon  = icon_delete();
                             <td>
                                 <div class="row-actions">
                                     <?php if (user_can('master.manage')): ?>
-                                    <button type="button" class="btn icon-btn" title="Restore" onclick="restoreBinnedBrand(<?php echo (int)$b['id']; ?>, <?php echo e(json_encode($b['name'])); ?>)">
+                                    <button type="button" class="btn icon-btn restore" title="Restore" onclick="restoreBinnedBrand(<?php echo (int)$b['id']; ?>, <?php echo e(json_encode($b['name'])); ?>)">
                                         <?php echo $restoreIcon; ?>
                                     </button>
                                     <button type="button" class="btn icon-btn delete" title="Delete permanently" onclick="purgeBinnedBrand(<?php echo (int)$b['id']; ?>, <?php echo e(json_encode($b['name'])); ?>)">

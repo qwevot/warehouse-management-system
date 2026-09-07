@@ -16,8 +16,8 @@ $dbError = '';
 
 try {
     $pdo = db();
-    // READ: one page of soft-deleted items, newest first by default.
-    $result = inventory_fetch($pdo, $mode, $state);
+    // READ: all soft-deleted items, for full client-side sorting and pagination.
+    $result = inventory_fetch($pdo, $mode, $state, true);
     $rows  = $result['rows'];
     $total = $result['total'];
     $state['page'] = $result['page'];

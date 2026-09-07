@@ -30,15 +30,26 @@ function ean13_valid(string $code): bool
 function next_master_code(PDO $pdo): string
 {
     // Auto-generates the next 4-digit product code (0001, 0002, ...) for
-    // the master items table, skipping past any non-numeric codes the user
-    // entered manually as well as any codes longer than 4 digits (so an
-    // accidental large value can't push the sequence past 9999).
-    $max = (int)$pdo->query(
-        "SELECT MAX(CAST(product_code AS UNSIGNED))
-           FROM master_items
-          WHERE product_code REGEXP '^[0-9]{1,4}$'"
-    )->fetchColumn();
-    return str_pad((string)($max + 1), 4, '0', STR_PAD_LEFT);
+    // the master items table, protected by a concurrency lock to prevent collisions.
+    $lockName = 'lock_master_product_code';
+    $locked = false;
+
+    try {
+        $st = $pdo->prepare('SELECT GET_LOCK(?, 5)');
+        $st->execute([$lockName]);
+        $locked = ($st->fetchColumn() == 1);
+
+        $max = (int)$pdo->query(
+            "SELECT MAX(CAST(product_code AS UNSIGNED))
+               FROM master_items
+              WHERE product_code REGEXP '^[0-9]{1,4}$'"
+        )->fetchColumn();
+        return str_pad((string)($max + 1), 4, '0', STR_PAD_LEFT);
+    } finally {
+        if ($locked) {
+            $pdo->prepare('SELECT RELEASE_LOCK(?)')->execute([$lockName]);
+        }
+    }
 }
 
 // Barcode format: YYMM + PPPP + NNN + check digit, rendered as EAN-13
@@ -74,17 +85,30 @@ function barcode_for_item(PDO $pdo, array $item): string
         return $existing;
     }
 
-    $st = $pdo->prepare(
-        "SELECT COALESCE(MAX(CAST(SUBSTR(barcode, 10, 3) AS UNSIGNED)), 0)
-           FROM inventory_list
-          WHERE name = ? AND COALESCE(brand,'') = ?
-            AND DATE_FORMAT(created_at, '%y%m') = ?
-            AND barcode IS NOT NULL AND barcode <> ''"
-    );
-    $st->execute([$name, $brand, $ymm]);
-    $nnnn = str_pad((string)((int)$st->fetchColumn() + 1), 3, '0', STR_PAD_LEFT);
+    $lockName = 'lock_barcode_' . md5($name . '|' . $brand . '|' . $ymm);
+    $locked = false;
 
-    return ean13('0' . $ymm . $ppp . $nnnn);
+    try {
+        $st = $pdo->prepare('SELECT GET_LOCK(?, 5)');
+        $st->execute([$lockName]);
+        $locked = ($st->fetchColumn() == 1);
+
+        $st = $pdo->prepare(
+            "SELECT COALESCE(MAX(CAST(SUBSTR(barcode, 10, 3) AS UNSIGNED)), 0)
+               FROM inventory_list
+              WHERE name = ? AND COALESCE(brand,'') = ?
+                AND DATE_FORMAT(created_at, '%y%m') = ?
+                AND barcode IS NOT NULL AND barcode <> ''"
+        );
+        $st->execute([$name, $brand, $ymm]);
+        $nnnn = str_pad((string)((int)$st->fetchColumn() + 1), 3, '0', STR_PAD_LEFT);
+
+        return ean13('0' . $ymm . $ppp . $nnnn);
+    } finally {
+        if ($locked) {
+            $pdo->prepare('SELECT RELEASE_LOCK(?)')->execute([$lockName]);
+        }
+    }
 }
 
 function qr_for_item(string $serial, string $name, string $location): string
