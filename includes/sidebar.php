@@ -14,18 +14,13 @@ $navSections = [
     'Movement' => [
         ['stock-in', 'pages/stock-in.php', 'Inbound', 'inbound'],
         ['stock-out', 'pages/stock-out.php', 'Outbound', 'outbound'],
-        ['check-in', 'pages/check-in.php', 'Check In', 'check-in'],
         ['transfers', 'pages/transfers.php', 'Transfers', 'transfers'],
         ['history', 'pages/history.php', 'Movement History', 'history'],
     ],
 ];
 
 if (current_role() === 'customer') {
-    $navSections = [
-        'Movement' => [
-            ['check-in', 'pages/check-in.php', 'Check In', 'check-in'],
-        ],
-    ];
+    $navSections = [];
 } elseif (current_role() === 'super admin') {
     $navSections['Administration'] = [
         ['users', 'pages/users.php', 'Users', 'users'],

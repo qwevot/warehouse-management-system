@@ -5,19 +5,27 @@
 <div class="modal-backdrop" id="scanModal">
     <div class="modal">
         <div class="modal-header">
-            <div class="modal-title">Scan Item</div>
+            <div class="modal-title">Scan / Lookup Item</div>
             <button type="button" class="modal-close" onclick="closeScanModal()">×</button>
         </div>
         <div class="modal-body">
-            <p style="color:var(--muted); margin-bottom:12px;">Point your camera at the item's barcode or QR code.</p>
+            <p style="color:var(--muted); margin-bottom:12px;">Point your camera at the barcode/QR code, upload a photo, or enter a serial number.</p>
             <div class="scan-actions">
                 <button type="button" class="btn primary" id="scanToggleBtn" onclick="toggleScan()">Start Camera</button>
             </div>
             <div id="scanReader" class="scan-reader"></div>
-            <div class="scan-or">— or —</div>
+            
+            <div class="scan-or">— or upload image —</div>
             <label class="btn upload scan-upload" for="scanFile">Take / Upload Photo to Scan</label>
             <input type="file" id="scanFile" accept="image/*" capture="environment" style="display:none;">
-            <div id="scanMsg" class="scan-result" style="display:none;"></div>
+
+            <div class="scan-or">— or enter SN / Barcode manually —</div>
+            <div style="display:flex; gap:8px; margin-top:4px;">
+                <input type="text" id="manualScanCode" placeholder="Enter Serial (SN-...) or Barcode..." class="form-input" style="flex:1; padding:8px 12px; border:1.5px solid var(--border); border-radius:6px; font-size:13px;" autocomplete="off">
+                <button type="button" class="btn secondary" onclick="handleManualScanCode()">Lookup</button>
+            </div>
+
+            <div id="scanMsg" class="scan-result" style="display:none; margin-top:12px;"></div>
         </div>
         <div class="modal-footer">
             <button type="button" class="btn secondary" onclick="closeScanModal()">Cancel</button>
@@ -44,6 +52,8 @@
     window.openScanModal = function () {
         document.getElementById("scanModal").classList.add("open");
         setMsg("");
+        const inp = document.getElementById("manualScanCode");
+        if (inp) inp.value = "";
     };
 
     window.closeScanModal = function () {
@@ -55,6 +65,20 @@
         if (scanScanner) { stopScan(); return; }
         startScan();
     };
+
+    window.handleManualScanCode = function () {
+        const inp = document.getElementById("manualScanCode");
+        const code = inp ? inp.value.trim() : "";
+        if (!code) return;
+        handleScan(code);
+    };
+
+    document.getElementById("manualScanCode")?.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            window.handleManualScanCode();
+        }
+    });
 
     async function startScan() {
         if (scanScanner) return;
@@ -87,8 +111,6 @@
                 handleScan(decodedText);
             },
             function (errName) {
-                // ZXing reports "No MultiFormat Readers..." whenever a frame has
-                // no detectable code yet; this counter confirms frames are flowing.
                 scanFrames++;
                 if (scanFrames === 1 || scanFrames % 15 === 0) {
                     setMsg("Line up the code fully inside the box... (frames: " + scanFrames + ")");
