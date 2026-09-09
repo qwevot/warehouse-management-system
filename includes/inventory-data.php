@@ -5,6 +5,7 @@
 // pagination math, and the <tr> markup in one place so the initial page
 // render and every subsequent AJAX page render stay identical.
 require_once __DIR__ . '/functions.php';
+require_once __DIR__ . '/auth.php';
 
 // The column set rendered for each list mode. Order matters.
 function inventory_columns(string $mode): array
@@ -465,3 +466,45 @@ function render_inventory_rows(array $rows, string $mode, int $startIndex = 0): 
 
     return $html;
 }
+
+function render_inventory_screen(string $pageTitle, string $activeNav, string $mode): void
+{
+    require_login();
+
+    $state  = inventory_state_from_request();
+    $rows   = [];
+    $total  = 0;
+    $facets = ['brand' => [], 'shelf' => [], 'row' => [], 'col' => []];
+    $dbError = '';
+
+    try {
+        $pdo = db();
+        $result = inventory_fetch($pdo, $mode, $state, true);
+        $rows  = $result['rows'];
+        $total = $result['total'];
+        $state['page'] = $result['page'];
+        $state['size'] = $result['size'];
+        $facets = inventory_facets($pdo, $mode);
+    } catch (Exception $e) {
+        $dbError = $mode === 'bin' ? 'Could not load the bin from the database.' : 'Could not load inventory from the database.';
+    }
+
+    include __DIR__ . '/header.php';
+
+    if ($dbError !== '') {
+        echo '<div class="flash error">' . e($dbError) . '</div>';
+    }
+
+    if ($mode === 'bin') {
+        echo '<section class="inventory-section" id="inventory">';
+        $emptyMessage = 'The bin is empty. Deleted items will appear here.';
+        include __DIR__ . '/inventory-table.php';
+        echo '</section>';
+        include __DIR__ . '/inventory-card.php';
+    } else {
+        include __DIR__ . '/inventory-view.php';
+    }
+
+    include __DIR__ . '/footer.php';
+}
+

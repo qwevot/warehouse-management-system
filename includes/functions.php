@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/icons.php';
+require_once __DIR__ . '/auth.php';
 
 function e($value): string
 {
@@ -397,4 +398,162 @@ function movement_qty(string $type, $quantity): string
         return (int)$quantity . ' unit';
     }
     return '<span class="dash">—</span>';
+}
+
+function handle_master_lifecycle(string $entity, string $action, int $id, ?string $redirectTarget = null): void
+{
+    require_login();
+    $requiredPerm = ($action === 'permanent_delete') ? 'permanent_delete' : 'master.manage';
+    require_can($requiredPerm);
+
+    $defaultRedirect = $entity === 'brand' ? 'brand' : 'items';
+    $pdo = html_db($entity === 'brand' ? 'brand' : 'items');
+
+    if ($id <= 0) {
+        redirect_to($redirectTarget ?: ($action === 'permanent_delete' ? 'master-bin' : $defaultRedirect), 'error', 'Invalid ' . ($entity === 'brand' ? 'brand.' : 'item.'));
+    }
+
+    if ($entity === 'brand') {
+        $st = $pdo->prepare('SELECT name, deleted_at FROM master_brands WHERE id = ?');
+        $st->execute([$id]);
+        $row = $st->fetch();
+        if (!$row) {
+            redirect_to($redirectTarget ?: 'master-bin', 'error', 'Brand not found.');
+        }
+        $name = $row['name'];
+
+        if ($action === 'delete') {
+            $used = $pdo->prepare('SELECT COUNT(*) FROM inventory_list WHERE brand = ? AND deleted_at IS NULL');
+            $used->execute([$name]);
+            if ((int)$used->fetchColumn() > 0) {
+                redirect_to('brand', 'error', 'Cannot delete "' . $name . '" — it is still used by inventory items.');
+            }
+            $pdo->prepare('UPDATE master_brands SET deleted_at = NOW() WHERE id = ?')->execute([$id]);
+            redirect_to($redirectTarget ?: 'brand', 'added', 'Brand "' . $name . '" moved to the master bin.');
+        } elseif ($action === 'permanent_delete') {
+            if ($row['deleted_at'] === null) {
+                redirect_to('master-bin', 'error', 'Only binned brands can be permanently deleted.');
+            }
+            $pdo->prepare('DELETE FROM master_brands WHERE id = ?')->execute([$id]);
+            redirect_to($redirectTarget ?: 'master-bin', 'added', 'Brand "' . $name . '" permanently deleted.');
+        } elseif ($action === 'restore') {
+            $pdo->prepare('UPDATE master_brands SET deleted_at = NULL WHERE id = ?')->execute([$id]);
+            redirect_to($redirectTarget ?: 'master-bin', 'added', 'Brand "' . $name . '" restored.');
+        }
+    } elseif ($entity === 'master-item') {
+        $st = $pdo->prepare('SELECT product_name, brand, deleted_at FROM master_items WHERE id = ?');
+        $st->execute([$id]);
+        $row = $st->fetch();
+        if (!$row) {
+            redirect_to($redirectTarget ?: 'master-bin', 'error', 'Master item not found.');
+        }
+        $name  = $row['product_name'];
+        $brand = (string)$row['brand'];
+
+        if ($action === 'delete') {
+            $used = $pdo->prepare('SELECT COUNT(*) FROM inventory_list WHERE name = ? AND COALESCE(brand, "") = ? AND deleted_at IS NULL');
+            $used->execute([$name, $brand]);
+            if ((int)$used->fetchColumn() > 0) {
+                redirect_to('items', 'error', 'Cannot delete "' . $name . '" — it is still used by inventory items.');
+            }
+            $pdo->prepare('UPDATE master_items SET deleted_at = NOW() WHERE id = ?')->execute([$id]);
+            redirect_to($redirectTarget ?: 'items', 'added', 'Master item "' . $name . '" moved to the master bin.');
+        } elseif ($action === 'permanent_delete') {
+            if ($row['deleted_at'] === null) {
+                redirect_to('master-bin', 'error', 'Only binned items can be permanently deleted.');
+            }
+            $pdo->prepare('DELETE FROM master_items WHERE id = ?')->execute([$id]);
+            redirect_to($redirectTarget ?: 'master-bin', 'added', 'Master item "' . $name . '" permanently deleted.');
+        } elseif ($action === 'restore') {
+            $pdo->prepare('UPDATE master_items SET deleted_at = NULL WHERE id = ?')->execute([$id]);
+            redirect_to($redirectTarget ?: 'master-bin', 'added', 'Master item "' . $name . '" restored.');
+        }
+    }
+}
+
+function handle_inventory_lifecycle(string $action, int $id, string $note = ''): void
+{
+    require_login_api();
+    $requiredPerm = ($action === 'permanent_delete') ? 'permanent_delete' : 'inventory.manage';
+    require_can_api($requiredPerm);
+
+    $pdo = json_db();
+    $modifiedBy = current_user_name();
+
+    // 1. Check if ID matches an individual unit
+    if ($action === 'restore') {
+        $unitSt = $pdo->prepare("SELECT u.*, i.deleted_at AS parent_deleted_at FROM inventory_units u JOIN inventory_list i ON i.id = u.inventory_id WHERE u.id = ?");
+    } else {
+        $unitSt = $pdo->prepare("SELECT * FROM inventory_units WHERE id = ?");
+    }
+    $unitSt->execute([$id]);
+    $unit = $unitSt->fetch();
+
+    if ($unit) {
+        if ($action === 'delete') {
+            $pdo->prepare("UPDATE inventory_units SET deleted_at = NOW(), status = 'taken', bin_note = ?, updated_at = NOW(), modified_by = ? WHERE id = ?")
+                ->execute([$note ?: null, $modifiedBy, $id]);
+            $pdo->prepare("UPDATE inventory_list SET quantity = (SELECT COUNT(*) FROM inventory_units WHERE inventory_id = ? AND deleted_at IS NULL), updated_at = NOW(), modified_by = ? WHERE id = ?")
+                ->execute([$unit['inventory_id'], $modifiedBy, $unit['inventory_id']]);
+            json_ok();
+        } elseif ($action === 'permanent_delete') {
+            if ($unit['deleted_at'] === null) {
+                json_fail('Only bin units can be permanently deleted.');
+            }
+            $inventoryId = (int)$unit['inventory_id'];
+            $pdo->prepare("DELETE FROM inventory_units WHERE id = ?")->execute([$id]);
+            $remSt = $pdo->prepare("SELECT COUNT(*) FROM inventory_units WHERE inventory_id = ?");
+            $remSt->execute([$inventoryId]);
+            $remaining = (int)$remSt->fetchColumn();
+
+            if ($remaining === 0) {
+                $parent = find_item($pdo, $inventoryId);
+                if ($parent) {
+                    delete_photo($parent['photo']);
+                    $pdo->prepare("DELETE FROM inventory_list WHERE id = ?")->execute([$inventoryId]);
+                }
+            } else {
+                $pdo->prepare("UPDATE inventory_list SET quantity = (SELECT COUNT(*) FROM inventory_units WHERE inventory_id = ? AND deleted_at IS NULL) WHERE id = ?")
+                    ->execute([$inventoryId, $inventoryId]);
+            }
+            json_ok();
+        } elseif ($action === 'restore') {
+            if ($unit['parent_deleted_at'] !== null) {
+                $pdo->prepare("UPDATE inventory_list SET deleted_at = NULL, status = 'available', bin_note = NULL, updated_at = NOW() WHERE id = ?")
+                    ->execute([$unit['inventory_id']]);
+            }
+            $pdo->prepare("UPDATE inventory_units SET deleted_at = NULL, bin_note = NULL, status = 'available', updated_at = NOW() WHERE id = ?")
+                ->execute([$id]);
+            $pdo->prepare("UPDATE inventory_list SET quantity = (SELECT COUNT(*) FROM inventory_units WHERE inventory_id = ? AND deleted_at IS NULL) WHERE id = ?")
+                ->execute([$unit['inventory_id'], $unit['inventory_id']]);
+            json_ok();
+        }
+    }
+
+    // 2. Fallback: batch item in inventory_list
+    $item = find_item($pdo, $id);
+    if ($item === null) {
+        json_fail('Item or unit not found.');
+    }
+
+    if ($action === 'delete') {
+        $pdo->prepare("UPDATE inventory_list SET deleted_at = NOW(), status = 'taken', bin_note = ?, updated_at = NOW(), modified_by = ? WHERE id = ?")
+            ->execute([$note ?: null, $modifiedBy, $item['id']]);
+        $pdo->prepare("UPDATE inventory_units SET deleted_at = NOW(), status = 'taken', bin_note = ?, updated_at = NOW(), modified_by = ? WHERE inventory_id = ? AND deleted_at IS NULL")
+            ->execute([$note ?: null, $modifiedBy, $item['id']]);
+        json_ok();
+    } elseif ($action === 'permanent_delete') {
+        if ($item['deleted_at'] === null) {
+            json_fail('Only bin items can be permanently deleted.');
+        }
+        delete_photo($item['photo']);
+        $pdo->prepare('DELETE FROM inventory_list WHERE id = ?')->execute([$item['id']]);
+        json_ok();
+    } elseif ($action === 'restore') {
+        $pdo->prepare("UPDATE inventory_list SET deleted_at = NULL, status = 'available', bin_note = NULL, updated_at = NOW() WHERE id = ?")->execute([$item['id']]);
+        $pdo->prepare("UPDATE inventory_units SET deleted_at = NULL, bin_note = NULL, status = 'available', updated_at = NOW() WHERE inventory_id = ?")->execute([$item['id']]);
+        json_ok();
+    }
+
+    json_fail('Invalid action.');
 }
