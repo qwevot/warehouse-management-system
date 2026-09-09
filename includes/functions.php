@@ -395,7 +395,7 @@ function movement_qty(string $type, $quantity): string
         return '-' . (int)$quantity;
     }
     if ($type === 'check_in') {
-        return (int)$quantity . ' unit';
+        return (string)(int)$quantity;
     }
     return '<span class="dash">—</span>';
 }
