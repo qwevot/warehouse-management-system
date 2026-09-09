@@ -18,6 +18,7 @@ try {
 $typeLabels = movement_type_labels();
 
 include __DIR__ . '/../includes/header.php';
+include __DIR__ . '/../includes/flash.php';
 
 require_once __DIR__ . '/../includes/data-toolbar.php';
 require_once __DIR__ . '/../includes/data-pagination.php';
@@ -30,14 +31,13 @@ $histToolbar    = buildToolbar('hist', $histSortOptions);
 $histPagination = buildPagination('hist', ['pageSize' => 10]);
 ?>
 
-<?php if (!empty($dbError)): ?>
-    <div class="flash error"><?php echo e($dbError); ?></div>
-<?php endif; ?>
-
 <section class="inventory-section" id="inventory">
 
     <div class="section-header">
         <div class="section-title">Recent Activities</div>
+        <?php if (current_role() === 'super admin'): ?>
+            <button type="button" class="btn danger" onclick="deleteHistory()">Delete History</button>
+        <?php endif; ?>
     </div>
 
     <div class="toolbar-row"><?php echo $histToolbar; ?></div>
@@ -98,6 +98,11 @@ $histPagination = buildPagination('hist', ['pageSize' => 10]);
             'created_ts'  => $m['created_at'] ? (int)strtotime($m['created_at']) : 0,
         ];
     }, $movements)); ?>;
+
+    function deleteHistory() {
+        if (!confirm("Are you sure you want to delete all movement history? This will permanently wipe all activity logs and cannot be undone.")) return;
+        window.submitPostForm("<?php echo BASE_URL; ?>/actions/delete-history.php", {});
+    }
 
     document.addEventListener("DOMContentLoaded", function () {
         if (typeof initHistoryTable === "function") {
