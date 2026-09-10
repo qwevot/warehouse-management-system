@@ -13,13 +13,16 @@
         <div class="form-grid">
 
             <div class="field full" id="mergeBarcodeWrap">
-                <label for="mergeBarcode">New barcode number (optional)</label>
-                <input type="text" id="mergeBarcode" placeholder="Leave empty to auto-generate">
+                <label>New barcode number</label>
+                <div class="barcode-auto-notice" style="display:flex; align-items:center; gap:8px; padding:10px 14px; background:#f8fafc; border:1px solid var(--border); border-radius:8px; font-size:13px; color:var(--text);">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--blue); flex-shrink:0;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                    <span>A new barcode number will be automatically generated as a brand-new inbound lot.</span>
+                </div>
             </div>
 
             <div class="field full" id="mergeTargetWrap" style="display:none;">
-                <label for="mergeTargetSelect">Target item (existing barcode)</label>
-                <select id="mergeTargetSelect" class="filter"></select>
+                <label for="mergeTargetSelect">Select barcode number to keep</label>
+                <select id="mergeTargetSelect" class="form-select" style="width:100%; height:38px; border:1px solid var(--border); border-radius:8px; padding:0 12px; font-size:13px; background:#fff; outline:none; color:var(--text); cursor:pointer;"></select>
             </div>
 
         </div>

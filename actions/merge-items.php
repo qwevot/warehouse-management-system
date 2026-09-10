@@ -92,7 +92,11 @@ try {
 
         foreach ($ids as $id) {
             if ($id === $targetId) continue;
-            $pdo->prepare("UPDATE inventory_list SET deleted_at = NOW(), status = 'taken' WHERE id = ?")->execute([$id]);
+            // Transfer active unit records from absorbed lots to the target lot so they stay connected
+            $pdo->prepare("UPDATE inventory_units SET inventory_id = ?, updated_at = NOW(), modified_by = ? WHERE inventory_id = ? AND deleted_at IS NULL")
+                ->execute([$targetId, $modifiedBy, $id]);
+            $pdo->prepare("UPDATE inventory_list SET deleted_at = NOW(), status = 'taken', modified_by = ?, updated_at = NOW() WHERE id = ?")
+                ->execute([$modifiedBy, $id]);
         }
     } else {
         $name = trim($_POST['name'] ?? '');
@@ -100,24 +104,25 @@ try {
             $name = $first['name'];
         }
 
-        $customBarcode = trim((string)($_POST['barcode'] ?? ''));
-        if ($customBarcode !== '' && mb_strlen($customBarcode) > 16) {
-            $pdo->rollBack();
-            json_fail('The barcode number is too long (max 16 characters).');
-        }
+        // Auto-generate barcode via null parameter (acting as a new inbound lot)
+        $created = create_inventory_item($pdo, [
+            'name'            => $name,
+            'brand'           => $first['brand'],
+            'quantity'        => $totalQty,
+            'location'        => $first['location'],
+            'bin_location'    => $first['bin_location'] ?? null,
+            'deployment_site' => $first['deployment_site'] ?? 'In Warehouse',
+            'photo'           => $first['photo'],
+            'status'          => 'available',
+            'modified_by'     => $modifiedBy,
+        ], null);
 
-        create_inventory_item($pdo, [
-            'name'        => $name,
-            'brand'       => $first['brand'],
-            'quantity'    => $totalQty,
-            'location'    => $first['location'],
-            'photo'       => $first['photo'],
-            'status'      => 'available',
-            'modified_by' => $modifiedBy,
-        ], $customBarcode === '' ? null : $customBarcode);
-
+        // Soft-delete the merged lots and retire their old unit records
         foreach ($ids as $id) {
-            $pdo->prepare("UPDATE inventory_list SET deleted_at = NOW(), status = 'taken' WHERE id = ?")->execute([$id]);
+            $pdo->prepare("UPDATE inventory_units SET deleted_at = NOW(), status = 'taken', modified_by = ?, updated_at = NOW() WHERE inventory_id = ? AND deleted_at IS NULL")
+                ->execute([$modifiedBy, $id]);
+            $pdo->prepare("UPDATE inventory_list SET deleted_at = NOW(), status = 'taken', modified_by = ?, updated_at = NOW() WHERE id = ?")
+                ->execute([$modifiedBy, $id]);
         }
     }
 

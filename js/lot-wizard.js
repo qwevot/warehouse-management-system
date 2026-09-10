@@ -270,8 +270,6 @@
         deactivateOther: () => splitMode.deactivate(),
         reset() {
             refreshMergeTargets();
-            const mb = $("#mergeBarcode");
-            if (mb) mb.value = "";
             const rb = document.querySelector('input[name="mergeMode"][value="new"]');
             if (rb) rb.checked = true;
             updateMergeDestination();
@@ -289,6 +287,9 @@
         if (tw) tw.style.display = mode === "existing" ? "" : "none";
         const bw = $("#mergeBarcodeWrap");
         if (bw) bw.style.display = mode === "new" ? "" : "none";
+        if (mode === "existing") {
+            refreshMergeTargets();
+        }
     }
     window.updateMergeDestination = updateMergeDestination;
 
@@ -309,11 +310,21 @@
         if (!sel) return;
         sel.innerHTML = "";
         const checked = $all(".row-select:checked").map((cb) => parseInt(cb.value, 10));
-        (window.INVENTORY || []).forEach((it) => {
-            if (!checked.includes(it.id)) return;
+        const selectedItems = (window.INVENTORY || []).filter((it) => checked.includes(it.id));
+
+        if (selectedItems.length === 0) {
+            const opt = document.createElement("option");
+            opt.value = "";
+            opt.textContent = "Select items from the table first...";
+            sel.appendChild(opt);
+            return;
+        }
+
+        selectedItems.forEach((it) => {
             const opt = document.createElement("option");
             opt.value = it.id;
-            opt.textContent = it.name + (it.brand ? "  ·  " + it.brand : "") + "  —  " + (it.barcode || it.serial);
+            const code = it.barcode || it.serial || ("Lot #" + it.id);
+            opt.textContent = "Barcode: " + code + " (" + (it.name || "Item") + (it.brand ? " · " + it.brand : "") + " · Qty: " + (it.quantity || 1) + ")";
             sel.appendChild(opt);
         });
     }
@@ -358,15 +369,13 @@
         const data = { mode: mode, ids: ids };
         if (mode === "existing") {
             const target = parseInt($("#mergeTargetSelect")?.value, 10) || 0;
-            if (!target) return alert("Choose a target item to merge into.");
+            if (!target) return alert("Choose which barcode number to keep.");
             data.target_id = target;
-        } else {
-            data.barcode = $("#mergeBarcode")?.value.trim();
         }
 
         const label = mode === "existing"
-            ? "Merge " + ids.length + " items into the target item? This cannot be undone."
-            : "Merge " + ids.length + " items into a new item? This cannot be undone.";
+            ? "Merge " + ids.length + " items keeping the selected barcode number? This cannot be undone."
+            : "Merge " + ids.length + " items into a new lot with an auto-generated barcode number? This cannot be undone.";
         if (!confirm(label)) return;
 
         window.post(BASE + "/actions/merge-items.php", data)
