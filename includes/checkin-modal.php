@@ -80,7 +80,7 @@ $isCustomer = ($currRole === 'customer');
                     <!-- Warehouse Sub-field -->
                     <div id="ciDestWarehouseGroup" class="field">
                         <label for="ciBinLocation">Bin / Shelf Location</label>
-                        <input type="text" id="ciBinLocation" name="bin_location" placeholder="e.g. A-01-1 or In Warehouse" maxlength="100">
+                        <input type="text" id="ciBinLocation" name="bin_location" placeholder="e.g. S01-R01-C01 or In Warehouse" maxlength="100">
                     </div>
 
                     <!-- Office Sub-field -->
@@ -92,7 +92,7 @@ $isCustomer = ($currRole === 'customer');
                     <div id="ciDestCustomerGroup" style="display:none; display:flex; flex-direction:column; gap:10px;">
                         <div class="field">
                             <label for="ciStaffCompany">Company Name *</label>
-                            <input type="text" id="ciStaffCompany" name="company" placeholder="e.g. PT Acme Corp" maxlength="100" autocomplete="off">
+                            <input type="text" id="ciStaffCompany" name="company" placeholder="e.g. PT NEC Indonesia" maxlength="100" autocomplete="off">
                         </div>
                         <div class="field">
                             <label for="ciStaffSite">Site Name *</label>
@@ -134,7 +134,7 @@ $isCustomer = ($currRole === 'customer');
         document.getElementById("ciUnitId").value = item.unit_id || "";
         document.getElementById("ciItemName").textContent = item.name || "Item";
         document.getElementById("ciItemBrand").textContent = item.brand || "—";
-        document.getElementById("ciItemIdentifier").textContent = item.serial ? ("SN: " + item.serial) : (item.barcode ? ("Barcode: " + item.barcode) : "Lot #" + item.id);
+        document.getElementById("ciItemIdentifier").textContent = item.serial ? ("Serial: " + item.serial) : (item.barcode ? ("Barcode: " + item.barcode) : "Lot #" + item.id);
         document.getElementById("ciCurrentLocation").textContent = item.location || "(Not set)";
         
         const statusEl = document.getElementById("ciItemStatus");

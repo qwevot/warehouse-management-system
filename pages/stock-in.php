@@ -146,6 +146,7 @@ window.MASTER_ITEMS = <?php echo json_encode(array_map(function($mi) {
 
 <?php include __DIR__ . '/../includes/scan-modal.php'; ?>
 <?php include __DIR__ . '/../includes/inventory-card.php'; ?>
+<?php include __DIR__ . '/../includes/print-lot-modal.php'; ?>
 
 <script>
     <?php include __DIR__ . '/../includes/stock-items-data.php'; ?>
@@ -157,6 +158,7 @@ window.MASTER_ITEMS = <?php echo json_encode(array_map(function($mi) {
         const optExisting = document.getElementById("modeOptExisting");
         const optNew = document.getElementById("modeOptNew");
         const moveList = document.getElementById("movementItemListSection");
+        const itemSearch = document.getElementById("stockItemSearch");
         const qtyExisting = document.getElementById("quantity");
         const prodName = document.getElementById("product_name");
         const qtyNew = document.getElementById("new_quantity");
@@ -167,6 +169,7 @@ window.MASTER_ITEMS = <?php echo json_encode(array_map(function($mi) {
             optExisting.style.borderColor = "var(--border-color, #e2e8f0)";
             optNew.style.borderColor = "var(--primary, #4f46e5)";
             if (moveList) moveList.style.display = "none";
+            if (itemSearch) itemSearch.removeAttribute("required");
             if (qtyExisting) qtyExisting.removeAttribute("required");
             if (prodName) prodName.setAttribute("required", "required");
             if (qtyNew) qtyNew.setAttribute("required", "required");
@@ -176,6 +179,7 @@ window.MASTER_ITEMS = <?php echo json_encode(array_map(function($mi) {
             optExisting.style.borderColor = "var(--primary, #4f46e5)";
             optNew.style.borderColor = "var(--border-color, #e2e8f0)";
             if (moveList) moveList.style.display = "block";
+            if (itemSearch) itemSearch.setAttribute("required", "required");
             if (qtyExisting) qtyExisting.setAttribute("required", "required");
             if (prodName) prodName.removeAttribute("required");
             if (qtyNew) qtyNew.removeAttribute("required");

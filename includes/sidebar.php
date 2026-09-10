@@ -6,9 +6,8 @@ $navSections = [
         ['master-bin', 'pages/master-bin.php', 'Master Bin', 'bin'],
     ],
     'Inventory' => [
-        ['inventory', 'pages/index.php', 'Lot', 'lot'],
-        ['barcode', 'pages/generator.php', 'Lot Split and Merge', 'split-merge'],
-        ['units', 'pages/units.php', 'Units', 'units'],
+        ['inventory', 'pages/index.php', 'Warehouse Lots', 'lot'],
+        ['units', 'pages/units.php', 'Unit Tracker', 'units'],
         ['bin', 'pages/bin.php', 'Inventory Bin', 'bin'],
     ],
     'Movement' => [
@@ -19,12 +18,25 @@ $navSections = [
     ],
 ];
 
-if (current_role() === 'customer') {
-    $navSections = [];
-} elseif (current_role() === 'super admin') {
-    $navSections['Administration'] = [
-        ['users', 'pages/users.php', 'Users', 'users'],
+$role = current_role();
+
+if ($role === 'customer') {
+    $navSections = [
+        'Customer' => [
+            ['customer-assets', 'pages/customer-assets.php', 'Customer Equipment', 'units'],
+        ],
     ];
+} else {
+    // Internal staff (super admin, admin, engineer, technician)
+    $navSections['Customer'] = [
+        ['customer-assets', 'pages/customer-assets.php', 'Customer Equipment', 'units'],
+    ];
+
+    if ($role === 'super admin') {
+        $navSections['Administration'] = [
+            ['users', 'pages/users.php', 'Users', 'users'],
+        ];
+    }
 }
 ?>
 <aside class="sidebar">

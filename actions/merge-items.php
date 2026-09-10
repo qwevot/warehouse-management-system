@@ -114,7 +114,7 @@ try {
             'photo'       => $first['photo'],
             'status'      => 'available',
             'modified_by' => $modifiedBy,
-        ], null, $customBarcode === '' ? null : $customBarcode);
+        ], $customBarcode === '' ? null : $customBarcode);
 
         foreach ($ids as $id) {
             $pdo->prepare("UPDATE inventory_list SET deleted_at = NOW(), status = 'taken' WHERE id = ?")->execute([$id]);

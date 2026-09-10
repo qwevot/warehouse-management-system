@@ -27,7 +27,9 @@ $binBrandSortOptions = [
     ['name-desc', 'Name (Z–A)'],
 ];
 $binBrandToolbar    = buildToolbar('binBrand', $binBrandSortOptions);
-$binBrandPagination = buildPagination('binBrand');
+$binBrandPagination = buildPagination('binBrand', [
+    'deletePermanentlyAction' => 'deleteAllBinnedMaster()',
+]);
 
 $binItemSortOptions = [
     ['code-asc',    'Code (A–Z)'],
@@ -40,7 +42,9 @@ $binItemSortOptions = [
     ['class-desc',  'Class (Z–A)'],
 ];
 $binItemToolbar    = buildToolbar('binItem', $binItemSortOptions);
-$binItemPagination = buildPagination('binItem');
+$binItemPagination = buildPagination('binItem', [
+    'deletePermanentlyAction' => 'deleteAllBinnedMaster()',
+]);
 ?>
 
 <?php include __DIR__ . '/../includes/flash.php'; ?>
@@ -205,7 +209,12 @@ window.BIN_ITEM_DATA = <?php echo json_encode(array_map(function($it) {
     ];
 }, $binnedItems)); ?>;
 
-document.addEventListener("DOMContentLoaded", function () {
+    function deleteAllBinnedMaster() {
+        if (!confirm("Are you sure you want to permanently delete ALL binned master items and brands? This operation cannot be undone.")) return;
+        window.submitPostForm("<?php echo BASE_URL; ?>/actions/clear-master-bin.php", {});
+    }
+
+    document.addEventListener("DOMContentLoaded", function () {
 initDataTable({
     searchInput:    '#binBrandSearchInput',
     sortSelect:     '#binBrandSortSelect',

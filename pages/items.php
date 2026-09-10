@@ -10,12 +10,26 @@ $dbError = '';
 
 try {
     $pdo = db();
-    // READ: all active master item types, with how many active inventory items use each.
+    // READ: all active master item types, with how many active warehouse lots, units, and alert configurations.
     $items = $pdo->query(
         "SELECT mi.id, mi.product_code, mi.product_name, mi.brand, mi.product_class, mi.created_at, mi.updated_at, mi.modified_by,
-                (SELECT COUNT(*) FROM inventory_list m WHERE m.name = mi.product_name COLLATE utf8mb4_general_ci AND COALESCE(m.brand, '') = mi.brand COLLATE utf8mb4_general_ci AND m.deleted_at IS NULL) AS used_by,
-                (SELECT COALESCE(SUM(m.quantity), 0) FROM inventory_list m WHERE m.name = mi.product_name COLLATE utf8mb4_general_ci AND COALESCE(m.brand, '') = mi.brand COLLATE utf8mb4_general_ci AND m.deleted_at IS NULL AND m.status = 'available') AS total_qty
+                ias.alert_enabled, ias.threshold AS custom_threshold,
+                (SELECT COUNT(*) FROM inventory_list m 
+                 WHERE m.name = mi.product_name COLLATE utf8mb4_general_ci 
+                   AND COALESCE(m.brand, '') = mi.brand COLLATE utf8mb4_general_ci 
+                   AND m.deleted_at IS NULL 
+                   AND m.quantity > 0 
+                   AND m.status = 'available'
+                   AND m.deployment_site = 'In Warehouse') AS used_by,
+                (SELECT COALESCE(SUM(m.quantity), 0) FROM inventory_list m 
+                 WHERE m.name = mi.product_name COLLATE utf8mb4_general_ci 
+                   AND COALESCE(m.brand, '') = mi.brand COLLATE utf8mb4_general_ci 
+                   AND m.deleted_at IS NULL 
+                   AND m.status = 'available' 
+                   AND m.quantity > 0
+                   AND m.deployment_site = 'In Warehouse') AS total_qty
          FROM master_items mi
+         LEFT JOIN item_alert_settings ias ON ias.master_item_id = mi.id
          WHERE mi.deleted_at IS NULL
          ORDER BY mi.product_code ASC"
     )->fetchAll();
@@ -171,6 +185,29 @@ $itemsPagination = buildPagination('items');
                         <option value="Inventory Item">Inventory Item</option>
                     </select>
                 </div>
+
+                <!-- Low Stock Alert Toggle & Threshold -->
+                <div class="field full" style="margin-top:8px; padding-top:12px; border-top:1px solid var(--border-color, #e2e8f0);">
+                    <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; background:var(--bg, #f8fafc); border:1px solid var(--border-color, #e2e8f0); border-radius:8px;">
+                        <div>
+                            <div style="font-weight:600; font-size:13px; color:var(--text, #1e293b);">Low Stock Notification</div>
+                            <div style="font-size:11.5px; color:var(--muted, #64748b);">Enable or disable low stock warning for this item</div>
+                        </div>
+                        <label style="position:relative; display:inline-block; width:44px; height:22px; cursor:pointer; margin:0;">
+                            <input type="checkbox" name="alert_enabled" value="1" id="editAlertEnabled" style="opacity:0; width:0; height:0;">
+                            <span style="position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background-color:#cbd5e1; transition:.3s; border-radius:22px;" id="editAlertSlider"></span>
+                            <span style="position:absolute; content:''; height:16px; width:16px; left:3px; bottom:3px; background-color:white; transition:.3s; border-radius:50%; box-shadow:0 1px 3px rgba(0,0,0,0.2); transition:.3s;" id="editAlertKnob"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="field full" id="editThresholdField">
+                    <label for="editThreshold" style="font-weight:600; font-size:13px;">Low Stock Threshold (Units)</label>
+                    <input type="number" id="editThreshold" name="threshold" min="0" max="99999" placeholder="Default: 5 units">
+                    <small style="color:var(--muted); font-size:11.5px; display:block; margin-top:3px;">
+                        When warehouse stock reaches or falls below this amount, an alert is triggered.
+                    </small>
+                </div>
             </div>
         </div>
         <div class="modal-footer">
@@ -238,8 +275,6 @@ initDataTable({
         'class-desc':    function(a,b) { return String(b.dataset.class||"").toLowerCase().localeCompare(String(a.dataset.class||"").toLowerCase()); },
         'modified_asc':  function(a,b) { return (parseInt(a.dataset.modifiedTs, 10)||0) - (parseInt(b.dataset.modifiedTs, 10)||0); },
         'modified_desc': function(a,b) { return (parseInt(b.dataset.modifiedTs, 10)||0) - (parseInt(a.dataset.modifiedTs, 10)||0); },
-        'modified-asc':  function(a,b) { return (parseInt(a.dataset.modifiedTs, 10)||0) - (parseInt(b.dataset.modifiedTs, 10)||0); },
-        'modified-desc': function(a,b) { return (parseInt(b.dataset.modifiedTs, 10)||0) - (parseInt(a.dataset.modifiedTs, 10)||0); },
     },
     data:     window.ITEMS_DATA,
     dataText: function(r) { return r.product_code + ' ' + r.product_name + ' ' + r.brand; },
@@ -252,8 +287,45 @@ initDataTable({
         document.getElementById("editProductName").value = it.product_name || "";
         document.getElementById("editBrand").value = it.brand || "";
         document.getElementById("editProductClass").value = it.product_class || "";
+
+        // Low stock alert settings
+        const alertCheckbox = document.getElementById("editAlertEnabled");
+        const slider = document.getElementById("editAlertSlider");
+        const knob = document.getElementById("editAlertKnob");
+        const threshInput = document.getElementById("editThreshold");
+
+        const isAlertOn = (it.alert_enabled !== undefined && it.alert_enabled !== null) ? (parseInt(it.alert_enabled, 10) === 1) : false;
+        if (alertCheckbox) {
+            alertCheckbox.checked = isAlertOn;
+            if (slider && knob) {
+                slider.style.backgroundColor = isAlertOn ? "var(--primary, #4f46e5)" : "#cbd5e1";
+                knob.style.left = isAlertOn ? "25px" : "3px";
+            }
+        }
+        if (threshInput) {
+            threshInput.value = (it.custom_threshold !== undefined && it.custom_threshold !== null && it.custom_threshold !== "") ? it.custom_threshold : "";
+        }
+
         document.getElementById("editItemModal").classList.add("open");
     }
+
+    // Toggle slider interaction
+    (function () {
+        const alertCheckbox = document.getElementById("editAlertEnabled");
+        const slider = document.getElementById("editAlertSlider");
+        const knob = document.getElementById("editAlertKnob");
+        if (alertCheckbox && slider && knob) {
+            alertCheckbox.addEventListener("change", function () {
+                if (this.checked) {
+                    slider.style.backgroundColor = "var(--primary, #4f46e5)";
+                    knob.style.left = "25px";
+                } else {
+                    slider.style.backgroundColor = "#cbd5e1";
+                    knob.style.left = "3px";
+                }
+            });
+        }
+    })();
 
     function closeEditItemModal() {
         document.getElementById("editItemModal").classList.remove("open");

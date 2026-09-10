@@ -27,13 +27,42 @@ try {
     }
 
     $onHand = (int)$item['quantity'];
+    $outboundMode = trim($_POST['outbound_mode'] ?? 'whole_lot');
+    $unitId = (int)($_POST['unit_id'] ?? 0);
+
+    // If whole lot is chosen, quantity must match the full on-hand quantity
+    if ($unitId === 0 && $outboundMode === 'whole_lot') {
+        $qty = $onHand;
+    }
+
     if ($qty > $onHand) {
         $pdo->rollBack();
         redirect_to('stock-out', 'error', 'Cannot issue more than the on-hand quantity (' . $onHand . ').');
     }
 
+    $depSite = (string)($item['deployment_site'] ?? '');
+    $itemLoc = (string)($item['location'] ?? '');
+    $isItemCustomerLoc = (classify_unit_location($depSite, $itemLoc) === 'customer');
+    if ($isItemCustomerLoc) {
+        $pdo->rollBack();
+        redirect_to('stock-out', 'error', 'This item is located at a customer site and cannot be issued out from the warehouse.');
+    }
+
     $modifiedBy = current_user_name();
-    $unitId = (int)($_POST['unit_id'] ?? 0);
+    $unitIds = array_filter(array_map('intval', (array)($_POST['unit_ids'] ?? [])));
+    $unitId  = (int)($_POST['unit_id'] ?? 0);
+    if ($unitId > 0 && !in_array($unitId, $unitIds, true)) {
+        $unitIds[] = $unitId;
+    }
+
+    if ($outboundMode === 'individual' && count($unitIds) === 0) {
+        $pdo->rollBack();
+        redirect_to('stock-out', 'error', 'Please select at least one unit to issue.');
+    }
+
+    if (count($unitIds) > 0) {
+        $qty = count($unitIds);
+    }
 
     // Decrease the item's on-hand quantity.
     $pdo->prepare('UPDATE inventory_list SET quantity = quantity - ?, updated_at = NOW(), modified_by = ? WHERE id = ?')
@@ -41,14 +70,39 @@ try {
 
     $transitLocation = 'In Transit (' . $issuedTo . ')';
 
-    if ($unitId > 0) {
-        // Target the specific scanned unit
-        $pdo->prepare("UPDATE inventory_units SET status = 'in_transit', location = ?, modified_by = ?, updated_at = NOW() WHERE id = ? AND status = 'available' AND deleted_at IS NULL")
-            ->execute([$transitLocation, $modifiedBy, $unitId]);
+    if (count($unitIds) > 0) {
+        // Target specifically checked units in warehouse
+        $placeholders = implode(',', array_fill(0, count($unitIds), '?'));
+        $stUnits = $pdo->prepare("
+            SELECT u.id, u.status, u.deployment_site, COALESCE(NULLIF(u.location, ''), i.location, '') AS location
+            FROM inventory_units u
+            JOIN inventory_list i ON i.id = u.inventory_id
+            WHERE u.id IN ($placeholders) AND u.deleted_at IS NULL
+            FOR UPDATE
+        ");
+        $stUnits->execute($unitIds);
+        $foundUnits = $stUnits->fetchAll();
+
+        foreach ($foundUnits as $unitRow) {
+            if ($unitRow['status'] !== 'available') {
+                $pdo->rollBack();
+                redirect_to('stock-out', 'error', 'One or more selected units are not available in the warehouse.');
+            }
+            $isUnitCustomerLoc = (classify_record_location($unitRow) === 'customer');
+            if ($isUnitCustomerLoc) {
+                $pdo->rollBack();
+                redirect_to('stock-out', 'error', 'One or more selected units are currently at a customer site and cannot be issued.');
+            }
+        }
+
+        $stUp = $pdo->prepare("UPDATE inventory_units SET status = 'available', location = ?, bin_location = NULL, deployment_site = ?, modified_by = ?, updated_at = NOW() WHERE id = ?");
+        foreach ($unitIds as $uid) {
+            $stUp->execute([$transitLocation, $transitLocation, $modifiedBy, $uid]);
+        }
     } else {
-        // Mark corresponding units as in_transit in strict FIFO order (oldest first)
-        $pdo->prepare("UPDATE inventory_units SET status = 'in_transit', location = ?, modified_by = ?, updated_at = NOW() WHERE inventory_id = ? AND status = 'available' AND deleted_at IS NULL ORDER BY id ASC LIMIT {$qty}")
-            ->execute([$transitLocation, $modifiedBy, $itemId]);
+        // Mark corresponding units with In Transit location in strict FIFO order (oldest first)
+        $pdo->prepare("UPDATE inventory_units SET status = 'available', location = ?, bin_location = NULL, deployment_site = ?, modified_by = ?, updated_at = NOW() WHERE inventory_id = ? AND status = 'available' AND deployment_site = 'In Warehouse' AND deleted_at IS NULL ORDER BY id ASC LIMIT {$qty}")
+            ->execute([$transitLocation, $transitLocation, $modifiedBy, $itemId]);
     }
 
     // Record the movement.

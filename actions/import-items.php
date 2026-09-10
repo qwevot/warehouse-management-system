@@ -48,7 +48,7 @@ try {
             'location'    => $location,
             'status'      => $status,
             'modified_by' => $modifiedBy,
-        ], $serial);
+        ]);
 
         $count++;
     }

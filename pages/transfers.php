@@ -83,6 +83,7 @@ include __DIR__ . '/../includes/header.php';
 </script>
 
 <?php include __DIR__ . '/../includes/scan-modal.php'; ?>
+<?php include __DIR__ . '/../includes/print-lot-modal.php'; ?>
 
 <script>
     // Scanning selects the matched item, fills the transfer card, and shows the

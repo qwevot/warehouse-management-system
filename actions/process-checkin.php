@@ -80,41 +80,73 @@ if ($role === 'customer') {
 try {
     $pdo->beginTransaction();
 
-    if ($unit !== null) {
-        $prevLocation = (string)($unit['location'] ?? '');
-        $prevStatus   = (string)($unit['status'] ?? 'available');
+    $isMovingOutside = ($destType === 'office' || $destType === 'customer' || $role === 'customer');
+    $isReturnToWarehouse = ($destType === 'warehouse');
 
-        $isMovingOutside = ($destType === 'office' || $destType === 'customer' || $role === 'customer');
-        $isMovingToWarehouse = ($destType === 'warehouse');
-
-        // 1. If moving outside and previously available in warehouse, auto-detach by decrementing warehouse lot quantity
-        if ($isMovingOutside && $prevStatus === 'available' && ($prevLocation === '' || $prevLocation === 'In Warehouse' || (!str_contains($prevLocation, ' - ') && $prevLocation !== 'Main Office'))) {
-            $pdo->prepare("UPDATE inventory_list SET quantity = GREATEST(0, quantity - 1), updated_at = NOW(), modified_by = ? WHERE id = ?")
-                ->execute([$modifier, $inventoryId]);
-        }
-        // 2. If returning to warehouse from outside or from in_transit, increment warehouse lot quantity
-        elseif ($isMovingToWarehouse && ($prevStatus === 'in_transit' || $prevLocation === 'Main Office' || str_contains($prevLocation, ' - '))) {
-            $pdo->prepare("UPDATE inventory_list SET quantity = quantity + 1, updated_at = NOW(), modified_by = ? WHERE id = ?")
-                ->execute([$modifier, $inventoryId]);
-        }
-
-        // Update ONLY this specific unit's location and resolve in_transit status
-        $up = $pdo->prepare("UPDATE inventory_units SET location = ?, status = 'available', updated_at = NOW(), modified_by = ? WHERE id = ?");
-        $up->execute([$finalLocation, $modifier, $unitId]);
-
-        // Record movement history as CHECK IN for this specific unit
-        $movementNote = "Unit [{$unitSerial}] checked in to {$finalLocation}" . ($notes !== '' ? " ({$notes})" : "");
-        $insMove = $pdo->prepare("INSERT INTO stock_movements (item_id, type, quantity, issued_to, note, modified_by, created_at) VALUES (?, 'check_in', 1, ?, ?, ?, NOW())");
-        $insMove->execute([$inventoryId, $finalLocation, $movementNote, $modifier]);
+    $targetBin = null;
+    $targetDeployment = 'In Warehouse';
+    if ($destType === 'warehouse') {
+        $rawBin = trim($_POST['bin_location'] ?? '');
+        $targetBin = $rawBin !== '' ? $rawBin : null;
+        $targetDeployment = 'In Warehouse';
     } else {
-        // Update batch-level location
-        $up = $pdo->prepare("UPDATE inventory_list SET location = ?, status = 'available', updated_at = NOW(), modified_by = ? WHERE id = ?");
-        $up->execute([$finalLocation, $modifier, $inventoryId]);
+        $targetBin = null;
+        $targetDeployment = $finalLocation;
+    }
 
-        // Record movement history as CHECK IN
-        $movementNote = "Lot checked in to {$finalLocation}" . ($notes !== '' ? " ({$notes})" : "");
-        $insMove = $pdo->prepare("INSERT INTO stock_movements (item_id, type, quantity, issued_to, note, modified_by, created_at) VALUES (?, 'check_in', ?, ?, ?, ?, NOW())");
-        $insMove->execute([$inventoryId, (int)($item['quantity'] ?? 1), $finalLocation, $movementNote, $modifier]);
+    if ($unit !== null) {
+        $previousLocation = (string)($unit['location'] ?? '');
+        $previousCat = classify_record_location($unit);
+        $isReturningUnit = $isReturnToWarehouse && (
+            $previousCat === 'transit' ||
+            $previousCat === 'customer' ||
+            $previousLocation === 'Main Office'
+        );
+        $movementType = $isReturningUnit ? 'return' : 'check_in';
+
+        // 1. Update ONLY this specific unit's location, bin_location, deployment_site, and status
+        $up = $pdo->prepare("UPDATE inventory_units SET location = ?, bin_location = ?, deployment_site = ?, status = 'available', updated_at = NOW(), modified_by = ? WHERE id = ?");
+        $up->execute([$finalLocation, $targetBin, $targetDeployment, $modifier, $unitId]);
+
+        // 2. Recalculate parent lot's warehouse on-hand quantity (units physically available in the warehouse)
+        $pdo->prepare("UPDATE inventory_list SET quantity = (
+            SELECT COUNT(*) FROM inventory_units 
+            WHERE inventory_id = ? 
+              AND deleted_at IS NULL 
+              AND status = 'available' 
+              AND deployment_site = 'In Warehouse'
+        ), updated_at = NOW(), modified_by = ? WHERE id = ?")->execute([$inventoryId, $modifier, $inventoryId]);
+
+        // Record movement history (RETURN or CHECK IN) for this specific unit
+        $movementActionText = $isReturningUnit ? "Unit [{$unitSerial}] returned to warehouse at {$finalLocation}" : "Unit [{$unitSerial}] checked in to {$finalLocation}";
+        $movementNote = $movementActionText . ($notes !== '' ? " ({$notes})" : "");
+        $insMove = $pdo->prepare("INSERT INTO stock_movements (item_id, type, quantity, issued_to, note, modified_by, created_at) VALUES (?, ?, 1, ?, ?, ?, NOW())");
+        $insMove->execute([$inventoryId, $movementType, $finalLocation, $movementNote, $modifier]);
+    } else {
+        $previousLocation = (string)($item['location'] ?? '');
+        $previousCat = classify_record_location($item);
+        $isReturningLot = $isReturnToWarehouse && (
+            $previousCat === 'transit' ||
+            $previousCat === 'customer' ||
+            $previousLocation === 'Main Office'
+        );
+        $movementType = $isReturningLot ? 'return' : 'check_in';
+
+        // Batch-level check-in: update all active units belonging to this lot to the new location
+        $pdo->prepare("UPDATE inventory_units SET location = ?, bin_location = ?, deployment_site = ?, status = 'available', updated_at = NOW(), modified_by = ? WHERE inventory_id = ? AND deleted_at IS NULL")
+            ->execute([$finalLocation, $targetBin, $targetDeployment, $modifier, $inventoryId]);
+
+        // If moving outside warehouse (customer site / office), warehouse lot on-hand quantity becomes 0
+        $newQty = $isMovingOutside ? 0 : (int)$item['quantity'];
+
+        $up = $pdo->prepare("UPDATE inventory_list SET location = ?, bin_location = ?, deployment_site = ?, quantity = ?, status = 'available', updated_at = NOW(), modified_by = ? WHERE id = ?");
+        $up->execute([$finalLocation, $targetBin, $targetDeployment, $newQty, $modifier, $inventoryId]);
+
+        // Record movement history (RETURN or CHECK IN)
+        $movementActionText = $isReturningLot ? "Lot returned to warehouse at {$finalLocation}" : "Lot checked in to {$finalLocation}";
+        $movementNote = $movementActionText . ($notes !== '' ? " ({$notes})" : "");
+        $insMove = $pdo->prepare("INSERT INTO stock_movements (item_id, type, quantity, issued_to, note, modified_by, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())");
+        $insMove->execute([$inventoryId, $movementType, (int)($item['quantity'] ?? 1), $finalLocation, $movementNote, $modifier]);
     }
 
     $pdo->commit();

@@ -16,38 +16,75 @@ $dbError = '';
 try {
     $pdo = db();
 
-    // KPI counts (active = not deleted).
+    // KPI counts (active in-warehouse inventory).
     $stmt = $pdo->query("
         SELECT COALESCE(SUM(quantity), 0) 
         FROM inventory_list 
         WHERE deleted_at IS NULL
+          AND status = 'available'
+          AND quantity > 0
+          AND deployment_site = 'In Warehouse'
     ");
 
     $totalQty    = (int)$stmt->fetchColumn();
-    $brandsInUse = (int)$pdo->query("SELECT COUNT(DISTINCT brand) FROM inventory_list WHERE deleted_at IS NULL AND brand IS NOT NULL AND brand <> ''")->fetchColumn();
-    $itemsInUse  = (int)$pdo->query("SELECT COUNT(DISTINCT name) FROM inventory_list WHERE deleted_at IS NULL")->fetchColumn();
+    $brandsInUse = (int)$pdo->query("SELECT COUNT(DISTINCT brand) FROM inventory_list WHERE deleted_at IS NULL AND quantity > 0 AND status = 'available' AND brand IS NOT NULL AND brand <> '' AND deployment_site = 'In Warehouse'")->fetchColumn();
+    $itemsInUse  = (int)$pdo->query("SELECT COUNT(DISTINCT name) FROM inventory_list WHERE deleted_at IS NULL AND quantity > 0 AND status = 'available' AND deployment_site = 'In Warehouse'")->fetchColumn();
 
     // Items for the quick search (feeds window.STOCK_ITEMS).
-    $items = $pdo->query("SELECT id, name, brand, serial, quantity, location, barcode, qr, status, photo FROM inventory_list WHERE deleted_at IS NULL ORDER BY name ASC")->fetchAll();
+    $items = $pdo->query("
+        SELECT id, name, brand, serial, quantity, location, bin_location, deployment_site, barcode, qr, status, photo 
+        FROM inventory_list 
+        WHERE deleted_at IS NULL 
+          AND quantity > 0 
+          AND status = 'available'
+          AND deployment_site = 'In Warehouse'
+        ORDER BY name ASC
+    ")->fetchAll();
 
-    // Low stock items based on master items catalog (threshold <= 5 units across all active inventory)
-    $lowStockThreshold = 5;
-    $stmtLow = $pdo->prepare("
-        SELECT mi.id, mi.product_code, mi.product_name, mi.brand, mi.product_class,
-               (SELECT COALESCE(SUM(m.quantity), 0) 
-                FROM inventory_list m 
-                WHERE m.name = mi.product_name COLLATE utf8mb4_general_ci 
-                  AND COALESCE(m.brand, '') = mi.brand COLLATE utf8mb4_general_ci 
-                  AND m.deleted_at IS NULL 
-                  AND m.status = 'available') AS total_qty
-        FROM master_items mi
-        WHERE mi.deleted_at IS NULL
-        HAVING total_qty <= ?
-        ORDER BY total_qty ASC, mi.product_name ASC
-    ");
-    $stmtLow->execute([$lowStockThreshold]);
-    $lowStockItems = $stmtLow->fetchAll();
-    $lowStockCount = count($lowStockItems);
+    $userRole = current_role();
+    $userCompany = trim((string)($currentUser['company'] ?? ''));
+
+    // Low stock items based on master items catalog
+    $defaultThreshold = 5;
+    $lowStockItems = [];
+    $lowStockCount = 0;
+
+    if ($userRole !== 'customer') {
+        $stmtLow = $pdo->prepare("
+            SELECT mi.id, mi.product_code, mi.product_name, mi.brand, mi.product_class,
+                   COALESCE(ias.threshold, ?) AS effective_threshold,
+                   (SELECT COALESCE(SUM(m.quantity), 0) 
+                    FROM inventory_list m 
+                    WHERE m.name = mi.product_name COLLATE utf8mb4_general_ci 
+                      AND COALESCE(m.brand, '') = mi.brand COLLATE utf8mb4_general_ci 
+                      AND m.deleted_at IS NULL 
+                      AND m.status = 'available'
+                      AND m.quantity > 0
+                      AND m.deployment_site = 'In Warehouse') AS total_qty
+            FROM master_items mi
+            LEFT JOIN item_alert_settings ias ON ias.master_item_id = mi.id
+            WHERE mi.deleted_at IS NULL
+              AND ias.alert_enabled = 1
+            HAVING total_qty <= effective_threshold
+            ORDER BY total_qty ASC, mi.product_name ASC
+        ");
+        $stmtLow->execute([$defaultThreshold]);
+        $lowStockItems = $stmtLow->fetchAll();
+        $lowStockCount = count($lowStockItems);
+    }
+
+    if ($userRole === 'customer' && $userCompany !== '') {
+        $stmtCust = $pdo->prepare("
+            SELECT COUNT(*) 
+            FROM inventory_units u
+            JOIN inventory_list i ON i.id = u.inventory_id
+            WHERE u.deleted_at IS NULL 
+              AND i.deleted_at IS NULL
+              AND (u.location LIKE ? OR u.location = ?)
+        ");
+        $stmtCust->execute([$userCompany . ' - %', $userCompany]);
+        $customerEquipmentCount = (int)$stmtCust->fetchColumn();
+    }
 
     // Recent activity (limited to latest 30 movements for performance).
     $movements = fetch_movements($pdo, 30);
@@ -58,6 +95,9 @@ try {
 $lowStockItems = $lowStockItems ?? [];
 $lowStockCount = $lowStockCount ?? 0;
 $lowStockThreshold = $lowStockThreshold ?? 5;
+$customerEquipmentCount = $customerEquipmentCount ?? 0;
+$userRole = $userRole ?? current_role();
+$userCompany = $userCompany ?? trim((string)($currentUser['company'] ?? ''));
 
 $typeLabels = movement_type_labels();
 
@@ -82,6 +122,38 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
     <h1>Welcome, <?php echo e($fullName); ?>!</h1>
 </div>
 
+<?php if ($userRole === 'customer'): ?>
+<div class="kpi-grid">
+    <a href="<?php echo BASE_URL; ?>/pages/customer-assets.php" class="kpi-card kpi-link">
+        <div class="kpi-label">Deployed Equipment</div>
+        <div class="kpi-value"><?php echo $customerEquipmentCount; ?> Units</div>
+        <div class="kpi-hint"><?php echo $userCompany ? e($userCompany) . ' Sites' : 'View Equipment'; ?> &rarr;</div>
+    </a>
+</div>
+
+<div class="quick-actions-grid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));">
+    <a href="javascript:void(0)" onclick="openScanModal()" class="quick-action-card green">
+        <div class="quick-action-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        </div>
+        <div class="quick-action-content">
+            <div class="quick-action-title">Check In Asset</div>
+            <div class="quick-action-desc">Scan or enter unit serial to receive at your site</div>
+        </div>
+        <div class="quick-action-arrow">&rarr;</div>
+    </a>
+    <a href="<?php echo BASE_URL; ?>/pages/customer-assets.php" class="quick-action-card blue">
+        <div class="quick-action-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>
+        </div>
+        <div class="quick-action-content">
+            <div class="quick-action-title">My Equipment</div>
+            <div class="quick-action-desc">View and audit all hardware deployed at your sites</div>
+        </div>
+        <div class="quick-action-arrow">&rarr;</div>
+    </a>
+</div>
+<?php else: ?>
 <div class="kpi-grid">
     <a href="<?php echo BASE_URL; ?>/pages/brand.php" class="kpi-card kpi-link">
         <div class="kpi-label">Active Brands</div>
@@ -96,7 +168,7 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
     <a href="<?php echo BASE_URL; ?>/pages/index.php" class="kpi-card kpi-link">
         <div class="kpi-label">Total Items in Inventory</div>
         <div class="kpi-value"><?php echo $totalQty; ?> Units</div>
-        <div class="kpi-hint">View Inventory List &rarr;</div>
+        <div class="kpi-hint">View Warehouse Lots &rarr;</div>
     </a>
 </div>
 
@@ -142,10 +214,11 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
         <div class="quick-action-arrow">&rarr;</div>
     </a>
 </div>
+<?php endif; ?>
 
 <?php include __DIR__ . '/../includes/item-card-select.php'; ?>
 
-<?php if (!empty($lowStockItems)): ?>
+<?php if ($userRole !== 'customer' && !empty($lowStockItems)): ?>
 <section class="inventory-section low-stock-section" id="lowStockSection" style="margin-bottom: 24px; border: 1.5px solid var(--amber); background: #ffffff; border-radius: 12px; overflow: hidden; padding: 0; box-shadow: 0 4px 16px rgba(245, 158, 11, 0.15);">
     <button type="button" class="low-stock-toggle" id="lowStockToggle" onclick="toggleLowStockTable()" aria-expanded="false" style="width:100%; display:flex; justify-content:space-between; align-items:center; background:var(--amber); border:none; padding:14px 20px; cursor:pointer; text-align:left; font-family:inherit; color:#ffffff;">
         <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
@@ -159,7 +232,7 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
                 </span>
             </div>
             <span style="font-size:12.5px; color:rgba(255,255,255,0.9);">
-                (&le; <?php echo $lowStockThreshold; ?> units remaining)
+                (items reaching or below their threshold)
             </span>
         </div>
         <div style="display:flex; align-items:center; gap:6px; color:#ffffff; font-size:13px; font-weight:600;">
@@ -180,6 +253,7 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
                     <th>Brand</th>
                     <th>Product Class</th>
                     <th>Total Qty</th>
+                    <th>Threshold</th>
                 </tr>
             </thead>
             <tbody>
@@ -194,6 +268,9 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
                             <strong style="color:<?php echo (int)$item['total_qty'] === 0 ? 'var(--red-ink)' : 'var(--amber-ink)'; ?>;">
                                 <?php echo (int)$item['total_qty']; ?>
                             </strong>
+                        </td>
+                        <td style="color:var(--muted); font-size:12.5px;">
+                            &le; <?php echo (int)$item['effective_threshold']; ?>
                         </td>
                     </tr>
                 <?php endforeach; ?>
@@ -365,6 +442,7 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
                         { value: 'in',       label: 'INBOUND' },
                         { value: 'out',      label: 'OUTBOUND' },
                         { value: 'check_in', label: 'CHECK IN' },
+                        { value: 'return',   label: 'RETURN' },
                         { value: 'transfer', label: 'TRANSFER' },
                     ],
                 },

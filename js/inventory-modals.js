@@ -71,6 +71,10 @@
         window.openModal("itemModal");
     };
 
+    window.openPrintUnitModal = function (id) {
+        window.openItemModal(id);
+    };
+
     // Shared Item Card (includes/item-card-select.php)
     window.showItemCard = function (it) {
         if (!it) return;
@@ -115,18 +119,13 @@
         const statusEl = document.getElementById("selCardStatus");
         if (statusEl) {
             const st = (it.status || "").toLowerCase();
-            if (st === "available") {
-                statusEl.textContent = "AVAILABLE";
-                statusEl.className = "status available";
-            } else if (st === "in_transit") {
-                statusEl.textContent = "IN TRANSIT";
-                statusEl.className = "status in_transit";
-            } else if (st === "taken") {
-                statusEl.textContent = "TAKEN / ISSUED";
-                statusEl.className = "status taken";
+            const isInactive = (st === "inactive" || st === "taken" || !!it.deleted_at);
+            if (isInactive) {
+                statusEl.textContent = "INACTIVE";
+                statusEl.className = "status inactive";
             } else {
-                statusEl.textContent = (it.status || "INACTIVE").toUpperCase();
-                statusEl.className = "status taken";
+                statusEl.textContent = "ACTIVE";
+                statusEl.className = "status available";
             }
         }
 
@@ -232,23 +231,10 @@
             brandInp.value = item.brand || "";
             brandInp.dataset.valid = item.brand || "";
         }
-        const qtyInp = $("#edit_quantity");
-        if (qtyInp) qtyInp.value = item.quantity || 1;
-        const serialInput = $("#edit_serial");
-        if (serialInput) serialInput.value = item.serial || "";
-
-        const loc = item.location || "";
-        const locMatch = loc.match(/^S(\d+)-R(\d+)-C(\d+)$/);
-        if (locMatch) {
-            $("#editLocShelf").value = locMatch[1];
-            $("#editLocRow").value = locMatch[2];
-            $("#editLocCol").value = locMatch[3];
-        } else {
-            $("#editLocShelf").value = "";
-            $("#editLocRow").value = "";
-            $("#editLocCol").value = "";
-        }
-        window.updateEditLocation();
+        const qtyDisp = $("#editQuantityDisplay");
+        if (qtyDisp) qtyDisp.textContent = item.quantity || 1;
+        const locDisp = $("#editLocationDisplay");
+        if (locDisp) locDisp.textContent = item.location || "—";
 
         const editPhotoData = $("#editPhotoData");
         if (editPhotoData) editPhotoData.value = "";
@@ -402,14 +388,22 @@
                 const label = document.createElement("div");
                 label.className = "suggest-label";
                 label.textContent = cfg.label(it);
+                d.appendChild(label);
                 if (cfg.sub) {
                     const sub = document.createElement("div");
                     sub.className = "suggest-sub";
                     sub.textContent = cfg.sub(it);
                     d.appendChild(sub);
                 }
-                d.appendChild(label);
-                d.addEventListener("click", () => { cfg.pick(it); closeBox(); });
+                d.addEventListener("mousedown", (e) => {
+                    e.preventDefault();
+                    cfg.pick(it);
+                    closeBox();
+                });
+                d.addEventListener("click", () => {
+                    cfg.pick(it);
+                    closeBox();
+                });
                 box.appendChild(d);
             });
             box.style.display = list.length ? "block" : "none";
@@ -425,16 +419,21 @@
         input.addEventListener("input", () => {
             if (cfg.onInput) cfg.onInput();
             const q = input.value.trim().toLowerCase();
-            if (!q) { closeBox(); return; }
+            if (!q) {
+                render(items.slice(0, limit));
+                return;
+            }
             render(matches(q));
         });
-        input.addEventListener("blur", () => setTimeout(closeBox, 150));
+        input.addEventListener("blur", () => setTimeout(closeBox, 180));
         document.addEventListener("click", (e) => {
             if (!input.contains(e.target) && !box.contains(e.target)) closeBox();
         });
     }
 
-    // Stock Movement search
+    window.initSuggest = initSuggest;
+
+    // Stock Movement search (Whole Lot)
     initSuggest({
         input: "#stockItemSearch",
         box: "#stockSuggest",
@@ -449,6 +448,32 @@
             const input = $("#stockItemSearch");
             if (input) input.value = it.name + (it.brand ? "  (" + it.brand + ")" : "");
             if (window.showItemCard) window.showItemCard(it);
+        },
+    });
+
+    // Stock Out: Individual Unit Serial autocomplete
+    initSuggest({
+        input: "#manualSerialInput",
+        box: "#serialSuggestBox",
+        items: window.AVAILABLE_UNITS || [],
+        limit: 30,
+        label: (u) => u.serial,
+        sub: (u) => (u.name || "") + (u.brand ? "  ·  " + u.brand : "") + (u.location ? "  —  " + u.location : ""),
+        search: (u) => (u.serial || "") + " " + (u.name || "") + " " + (u.brand || "") + " " + (u.location || ""),
+        onInput: () => {
+            const snVal = ($("#manualSerialInput")?.value || "").trim().toLowerCase();
+            const exact = (window.AVAILABLE_UNITS || []).find((u) => u.serial && u.serial.toLowerCase() === snVal);
+            if (exact && window.selectUnitForStockOut) {
+                window.selectUnitForStockOut(exact);
+            } else {
+                const hiddenUnit = $("#stockUnitId");
+                if (hiddenUnit) hiddenUnit.value = "";
+            }
+        },
+        pick: (u) => {
+            if (window.selectUnitForStockOut) {
+                window.selectUnitForStockOut(u);
+            }
         },
     });
 

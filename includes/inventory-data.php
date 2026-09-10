@@ -16,7 +16,7 @@ function inventory_columns(string $mode): array
         case 'generator':
             return ['no', 'photo', 'item', 'brand','quantity', 'serial', 'location', 'barcode', 'action'];
         case 'units':
-            return ['no', 'action', 'photo', 'item', 'brand', 'location', 'status', 'serial', 'qr', 'registered', 'last_modified', 'modified_by'];
+            return ['no', 'action', 'photo', 'item', 'brand', 'location', 'status', 'serial', 'barcode', 'registered', 'last_modified', 'modified_by'];
         default:
             return ['no', 'action', 'photo', 'item', 'brand', 'quantity', 'location', 'status', 'barcode', 'registered', 'last_modified', 'modified_by'];
     }
@@ -26,7 +26,13 @@ function inventory_columns(string $mode): array
 // lists active rows.
 function inventory_scope(string $mode): string
 {
-    return $mode === 'bin' ? 'deleted_at IS NOT NULL' : 'deleted_at IS NULL';
+    if ($mode === 'bin') {
+        return 'deleted_at IS NOT NULL';
+    }
+    if ($mode === 'list' || $mode === 'generator') {
+        return "deleted_at IS NULL AND quantity > 0 AND status = 'available' AND deployment_site = 'In Warehouse'";
+    }
+    return "deleted_at IS NULL AND status = 'available' AND deployment_site = 'In Warehouse'";
 }
 
 // Normalize request input (from $_GET or $_POST) into a validated state array.
@@ -71,7 +77,10 @@ function inventory_state_from_request(): array
 function inventory_fetch(PDO $pdo, string $mode, array $state, bool $all = false): array
 {
     if ($mode === 'units' || $mode === 'bin') {
-        $where = [$mode === 'bin' ? 'u.deleted_at IS NOT NULL' : 'u.deleted_at IS NULL AND i.deleted_at IS NULL'];
+        $where = [$mode === 'bin' 
+            ? 'u.deleted_at IS NOT NULL' 
+            : "u.deleted_at IS NULL AND i.deleted_at IS NULL"
+        ];
         $params = [];
 
         $q = (string)($state['q'] ?? '');
@@ -134,7 +143,8 @@ function inventory_fetch(PDO $pdo, string $mode, array $state, bool $all = false
         $page = max(1, (int)($state['page'] ?? 1));
 
         $selectSql = "SELECT u.id, u.inventory_id, u.serial, u.qr, u.status, u.created_at, u.updated_at, u.modified_by, u.bin_note, u.deleted_at,
-                             COALESCE(u.location, i.location, '') AS location,
+                             u.bin_location, u.deployment_site,
+                             COALESCE(NULLIF(u.bin_location, ''), NULLIF(u.deployment_site, ''), u.location, i.location, '') AS location,
                              i.name, i.brand, i.photo, i.barcode, 1 AS quantity
                       FROM inventory_units u
                       JOIN inventory_list i ON i.id = u.inventory_id
@@ -165,8 +175,8 @@ function inventory_fetch(PDO $pdo, string $mode, array $state, bool $all = false
     $q = (string)($state['q'] ?? '');
     if ($q !== '') {
         $like = '%' . $q . '%';
-        $where[] = '(name LIKE ? OR brand LIKE ? OR barcode LIKE ? OR location LIKE ? OR COALESCE(bin_note, "") LIKE ? OR COALESCE(modified_by, "") LIKE ?)';
-        array_push($params, $like, $like, $like, $like, $like, $like);
+        $where[] = '(name LIKE ? OR brand LIKE ? OR barcode LIKE ? OR location LIKE ? OR COALESCE(bin_location, "") LIKE ? OR COALESCE(deployment_site, "") LIKE ? OR COALESCE(bin_note, "") LIKE ? OR COALESCE(modified_by, "") LIKE ?)';
+        array_push($params, $like, $like, $like, $like, $like, $like, $like, $like);
     }
 
     $brand = (array)($state['brand'] ?? []);
@@ -183,13 +193,13 @@ function inventory_fetch(PDO $pdo, string $mode, array $state, bool $all = false
             $v = (string)$v;
             if (preg_match('/^' . $prefix . '\d{2}$/', $v) !== 1) continue;
             if ($key === 'shelf') {
-                $parts[] = 'location LIKE ?';
+                $parts[] = '(COALESCE(bin_location, location) LIKE ?)';
                 $params[] = $v . '-%';
             } elseif ($key === 'row') {
-                $parts[] = 'location LIKE ?';
+                $parts[] = '(COALESCE(bin_location, location) LIKE ?)';
                 $params[] = '%-' . $v . '-%';
             } else {
-                $parts[] = 'location LIKE ?';
+                $parts[] = '(COALESCE(bin_location, location) LIKE ?)';
                 $params[] = '%-' . $v;
             }
         }
@@ -304,19 +314,24 @@ function inventory_facets(PDO $pdo, string $mode): array
 // The JSON shape handed to the browser for modals and export.
 function inventory_item_payload(array $item): array
 {
+    $depSite = trim((string)($item['deployment_site'] ?? ''));
+    $locCategory = classify_record_location($item);
+
     return [
-        'id'         => (int)$item['id'],
-        'serial'     => $item['serial'],
-        'name'       => $item['name'],
-        'brand'      => $item['brand'],
-        'quantity'   => (int)$item['quantity'],
-        'location'   => $item['location'],
-        'barcode'    => $item['barcode'],
-        'qr'         => $item['qr'],
-        'photo'      => $item['photo'] ? BASE_URL . '/' . $item['photo'] : '',
-        'status'     => $item['status'],
-        'created_at' => $item['created_at'] ? date('Y-m-d H:i', strtotime($item['created_at'])) : '',
-        'created_ts' => $item['created_at'] ? (int)strtotime($item['created_at']) : 0,
+        'id'              => (int)$item['id'],
+        'serial'          => $item['serial'],
+        'name'            => $item['name'],
+        'brand'           => $item['brand'],
+        'quantity'        => (int)$item['quantity'],
+        'location'        => $item['location'],
+        'loc_category'    => $locCategory,
+        'deployment_site' => $depSite,
+        'barcode'         => $item['barcode'],
+        'qr'              => $item['qr'],
+        'photo'           => $item['photo'] ? BASE_URL . '/' . $item['photo'] : '',
+        'status'          => $item['status'],
+        'created_at'      => $item['created_at'] ? date('Y-m-d H:i', strtotime($item['created_at'])) : '',
+        'created_ts'      => $item['created_at'] ? (int)strtotime($item['created_at']) : 0,
     ];
 }
 
@@ -328,10 +343,10 @@ function render_inventory_action_buttons(array $item, string $mode): string
 
     if ($mode === 'bin') {
         if (user_can('inventory.manage')) {
-            $html .= '<button class="btn icon-btn restore" title="Restore" onclick="runRestoreItem(' . $id . ')">' . icon_restore() . '</button>';
+            $html .= '<button class="btn icon-btn restore" title="Restore" onclick="runRestoreItem(' . $id . ', \'unit\')">' . icon_restore() . '</button>';
         }
         if (user_can('permanent_delete')) {
-            $html .= '<button class="btn icon-btn delete" title="Permanently Delete" onclick="runPermanentDelete(' . $id . ')">' . icon_delete() . '</button>';
+            $html .= '<button class="btn icon-btn delete" title="Permanently Delete" onclick="runPermanentDelete(' . $id . ', \'unit\')">' . icon_delete() . '</button>';
         }
         return $html;
     }
@@ -348,7 +363,7 @@ function render_inventory_action_buttons(array $item, string $mode): string
     if ($mode === 'units') {
         $html .= '<button class="btn icon-btn view" title="View Unit Details" onclick="openItemModal(' . $id . ')">' . icon_view() . '</button>';
         if (user_can('inventory.manage')) {
-            $html .= '<button class="btn icon-btn delete" title="Move Unit to Bin" onclick="runDeleteItem(' . $id . ')">' . icon_delete() . '</button>';
+            $html .= '<button class="btn icon-btn delete" title="Move Unit to Bin" onclick="runDeleteItem(' . $id . ', \'unit\')">' . icon_delete() . '</button>';
         }
         return $html;
     }
@@ -359,7 +374,7 @@ function render_inventory_action_buttons(array $item, string $mode): string
     }
     $html .= '<button class="btn icon-btn view" title="View" onclick="openItemModal(' . $id . ')">' . icon_view() . '</button>';
     if (user_can('inventory.manage')) {
-        $html .= '<button class="btn icon-btn delete" title="Delete" onclick="runDeleteItem(' . $id . ')">' . icon_delete() . '</button>';
+        $html .= '<button class="btn icon-btn delete" title="Delete" onclick="runDeleteItem(' . $id . ', \'lot\')">' . icon_delete() . '</button>';
     }
 
     return $html;
@@ -370,14 +385,17 @@ function render_inventory_action_buttons(array $item, string $mode): string
 function render_inventory_rows(array $rows, string $mode, int $startIndex = 0): string
 {
     $cols = inventory_columns($mode);
-    $selectable = ($mode === 'generator');
+    $selectable = ($mode === 'generator' || $mode === 'list');
     $html = '';
 
     foreach ($rows as $i => $item) {
         $no = $startIndex + $i + 1;
         $modTs = !empty($item['updated_at']) ? (int)strtotime((string)$item['updated_at']) : (int)strtotime((string)$item['created_at']);
 
-        $html .= '<tr class="inventory-row" data-id="' . (int)$item['id'] . '" data-status="' . e($item['status']) . '" data-brand="' . e($item['brand']) . '" data-loc="' . e($item['location']) . '" data-created="' . (int)strtotime((string)$item['created_at']) . '" data-modified="' . $modTs . '">';
+        $depSite = trim((string)($item['deployment_site'] ?? ''));
+        $locCategory = classify_record_location($item);
+
+        $html .= '<tr class="inventory-row" data-id="' . (int)$item['id'] . '" data-status="' . e($item['status']) . '" data-brand="' . e($item['brand']) . '" data-loc="' . e($item['location']) . '" data-loc-category="' . $locCategory . '" data-deployment-site="' . e($depSite) . '" data-created="' . (int)strtotime((string)$item['created_at']) . '" data-modified="' . $modTs . '">';
 
         if ($selectable) {
             $html .= '<td class="merge-check-col" data-label=""><input type="checkbox" class="row-select" value="' . (int)$item['id'] . '"></td>';
@@ -412,16 +430,37 @@ function render_inventory_rows(array $rows, string $mode, int $startIndex = 0): 
         }
 
         if (in_array('location', $cols, true)) {
-            if ($item['location']) {
-                $html .= '<td data-label="Location"><span class="location">' . e($item['location']) . '</span></td>';
+            $binLoc = trim((string)($item['bin_location'] ?? ''));
+            $depSite = trim((string)($item['deployment_site'] ?? ''));
+            if ($binLoc === '' && preg_match('/^S\d+-R\d+-C\d+/', (string)($item['location'] ?? ''))) {
+                $binLoc = trim((string)$item['location']);
+            }
+            if ($depSite === '') {
+                $depSite = ($binLoc !== '') ? 'In Warehouse' : trim((string)($item['location'] ?? ''));
+            }
+
+            if ($binLoc !== '') {
+                $html .= '<td data-label="Location">';
+                $html .= '<div class="location-cell">';
+                $html .= '<span class="bin-badge">' . e($binLoc) . '</span>';
+                if ($depSite !== '' && $depSite !== $binLoc) {
+                    $html .= '<span class="site-subtext">' . e($depSite) . '</span>';
+                }
+                $html .= '</div></td>';
+            } elseif ($depSite !== '') {
+                $html .= '<td data-label="Location">';
+                $html .= '<div class="location-cell"><span class="site-text">' . e($depSite) . '</span></div>';
+                $html .= '</td>';
             } else {
                 $html .= '<td data-label="Location"><span class="dash">—</span></td>';
             }
         }
 
         if (in_array('status', $cols, true)) {
-            $stLabel = $item['status'] === 'available' ? 'AVAILABLE' : ($item['status'] === 'in_transit' ? 'IN TRANSIT' : 'TAKEN');
-            $html .= '<td data-label="Status"><span class="status ' . e($item['status']) . '">' . $stLabel . '</span></td>';
+            $isInactive = ($mode === 'bin' || !empty($item['deleted_at']) || in_array(strtolower((string)$item['status']), ['inactive', 'taken'], true));
+            $stLabel = $isInactive ? 'INACTIVE' : 'ACTIVE';
+            $stClass = $isInactive ? 'inactive' : 'available';
+            $html .= '<td data-label="Status"><span class="status ' . $stClass . '">' . $stLabel . '</span></td>';
         }
 
         if (in_array('serial', $cols, true)) {
@@ -437,8 +476,8 @@ function render_inventory_rows(array $rows, string $mode, int $startIndex = 0): 
         }
 
         if (in_array('qr', $cols, true)) {
-            $modalId = (int)($item['inventory_id'] ?? $item['id']);
-            $html .= '<td data-label="QR Code"><button type="button" class="btn icon-btn view" title="View Details / QR Code" onclick="openItemModal(' . $modalId . ')"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg></button></td>';
+            $modalId = (int)$item['id'];
+            $html .= '<td data-label="Print Label"><button type="button" class="btn icon-btn view" title="Print Label" onclick="openPrintUnitModal(' . $modalId . ')"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg></button></td>';
         }
 
         if (in_array('registered', $cols, true)) {
@@ -501,6 +540,14 @@ function render_inventory_screen(string $pageTitle, string $activeNav, string $m
         include __DIR__ . '/inventory-table.php';
         echo '</section>';
         include __DIR__ . '/inventory-card.php';
+        ?>
+        <script>
+        function deleteAllBinnedItems() {
+            if (!confirm("Are you sure you want to permanently delete ALL items in the inventory bin? This operation cannot be undone.")) return;
+            window.submitPostForm("<?php echo BASE_URL; ?>/actions/clear-inventory-bin.php", {});
+        }
+        </script>
+        <?php
     } else {
         include __DIR__ . '/inventory-view.php';
     }

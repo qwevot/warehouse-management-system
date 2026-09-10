@@ -62,19 +62,19 @@ if (!window.MASTER_ITEMS) {
                 </div>
 
                 <div class="field">
-                    <?php
-                    $locPrefix = 'editLoc';
-                    $locUpdateFn = 'updateEditLocation()';
-                    $locHiddenName = 'location';
-                    $locHiddenId = 'edit_location';
-                    include __DIR__ . '/location-picker.php';
-                    ?>
-                    <div class="error-msg">Please enter a location.</div>
+                    <label>Current Location</label>
+                    <div style="padding: 10px 12px; background: var(--bg, #f8fafc); border: 1px solid var(--border, #e2e8f0); border-radius: var(--radius-sm, 6px); font-size: 13px;">
+                        <span id="editLocationDisplay" style="font-weight: 600; color: var(--text, #1e293b);">—</span>
+                        <div style="font-size: 11px; color: var(--muted, #64748b); margin-top: 3px;">To change location, use <a href="<?php echo BASE_URL; ?>/pages/transfers.php" style="color:var(--blue, #4f46e5); text-decoration:underline;">Transfers</a>.</div>
+                    </div>
                 </div>
 
                 <div class="field">
-                    <label for="edit_quantity">Quantity *</label>
-                    <input type="number" id="edit_quantity" name="quantity" min="1" value="1" required>
+                    <label>Current On-Hand Quantity</label>
+                    <div style="padding: 10px 12px; background: var(--bg, #f8fafc); border: 1px solid var(--border, #e2e8f0); border-radius: var(--radius-sm, 6px); font-size: 13px;">
+                        <span id="editQuantityDisplay" style="font-weight: 700; color: var(--text, #1e293b);">1</span>
+                        <div style="font-size: 11px; color: var(--muted, #64748b); margin-top: 3px;">Adjust stock via <a href="<?php echo BASE_URL; ?>/pages/stock-in.php" style="color:var(--blue, #4f46e5); text-decoration:underline;">Inbound</a> or <a href="<?php echo BASE_URL; ?>/pages/stock-out.php" style="color:var(--blue, #4f46e5); text-decoration:underline;">Outbound</a>.</div>
+                    </div>
                 </div>
 
             </div>

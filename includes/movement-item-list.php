@@ -3,11 +3,13 @@
 // Transfers forms. Expects $items (inventory rows) and $autofillTitle to be
 // set before including.
 $inventory = $items;
-$rowSelectable = false;
-$tableColumns = ['no', 'item', 'brand', 'serial', 'quantity', 'location', 'status', 'action'];
+$tableColumns = ['no', 'action', 'photo', 'item', 'brand', 'quantity', 'location', 'status'];
 $renderActions = function ($item) use ($autofillTitle) { ?>
-    <button class="btn icon-btn view" title="View" onclick="openItemModal(<?php echo (int)$item['id']; ?>)">
+    <button class="btn icon-btn view" title="View Details" onclick="openItemModal(<?php echo (int)$item['id']; ?>)">
         <?php echo icon_view(); ?>
+    </button>
+    <button class="btn icon-btn view" title="Print Barcode &amp; Unit QR Codes" onclick="openPrintLotModal(<?php echo (int)$item['id']; ?>)">
+        <?php echo icon_print(); ?>
     </button>
     <?php if (user_can('movement.manage')): ?>
     <button class="btn icon-btn view" title="<?php echo e($autofillTitle); ?>" onclick="pickStockItem(<?php echo (int)$item['id']; ?>)">

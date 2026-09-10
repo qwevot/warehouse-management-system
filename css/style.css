@@ -1059,6 +1059,13 @@ body.split-mode tr.inventory-row:has(.row-select:checked) td {
     background: var(--surface);
 }
 
+.scan-result:empty {
+    display: none !important;
+    padding: 0 !important;
+    border: none !important;
+    margin: 0 !important;
+}
+
 .scan-result.error {
     background: var(--red-soft);
     color: var(--red-ink);
@@ -1423,8 +1430,10 @@ th.action-col {
     border: 1px solid #ddd6fe;
 }
 
+.status.inactive,
 .status.taken {
     color: var(--red-ink);
+    background: var(--red-soft);
 }
 
 .status.inbound {
@@ -1441,6 +1450,11 @@ th.action-col {
 .status.check_in {
     color: #047857;
     background: #d1fae5;
+}
+
+.status.return {
+    color: #0f766e;
+    background: #ccfbf1;
 }
 
 .status.transfer {
@@ -2510,6 +2524,54 @@ button,
     body.print-both #itemModal .detail-box[data-print="qr"] {
         display: block !important;
     }
+
+    /* The Print Lot & Unit QRs modal */
+    #printLotModal {
+        position: static !important;
+        background: none !important;
+        padding: 0 !important;
+        display: block !important;
+    }
+    #printLotModal .modal {
+        box-shadow: none !important;
+        border: none !important;
+        max-width: 100% !important;
+        max-height: none !important;
+        overflow: visible !important;
+        padding: 0 !important;
+        width: 100% !important;
+    }
+    #printLotModal .modal-body {
+        max-height: none !important;
+        overflow: visible !important;
+        padding: 0 !important;
+    }
+    #printLotModal .modal-header,
+    #printLotModal .modal-footer,
+    #printLotModal .no-print {
+        display: none !important;
+    }
+    #printLotModal #printLotContent {
+        display: block !important;
+    }
+    #printLotModal #printLotBarcodeSection {
+        page-break-inside: avoid;
+        margin-bottom: 20px !important;
+    }
+    body.print-lot-barcode-only #printLotModal #printLotUnitsGrid {
+        display: none !important;
+    }
+    body.print-lot-all #printLotModal #printLotUnitsGrid {
+        display: grid !important;
+        grid-template-columns: repeat(4, 1fr) !important;
+        gap: 16px !important;
+        page-break-inside: auto;
+    }
+    body.print-lot-all #printLotModal .unit-qr-print-card {
+        page-break-inside: avoid !important;
+        border: 1px dashed #cbd5e1 !important;
+        padding: 10px !important;
+    }
 }
 
 /* ============================================================
@@ -2887,4 +2949,35 @@ th.sortable.asc .sort-icon {
     transform: rotate(180deg);
 }
 
+/* Location Cell: Bin Badge & Deployment Site (Option A) */
+.location-cell {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+    line-height: 1.25;
+}
 
+.bin-badge {
+    display: inline-block;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--blue-dark);
+    background: var(--blue-soft);
+    border: 1px solid var(--blue-line);
+    padding: 1px 6px;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+}
+
+.site-subtext {
+    font-size: 11px;
+    color: var(--muted);
+}
+
+.site-text {
+    font-size: 13px;
+    color: var(--text);
+    font-weight: 500;
+}

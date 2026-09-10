@@ -28,7 +28,10 @@ $histSortOptions = [
     ['oldest', 'Oldest First'],
 ];
 $histToolbar    = buildToolbar('hist', $histSortOptions);
-$histPagination = buildPagination('hist', ['pageSize' => 10]);
+$histPagination = buildPagination('hist', [
+    'pageSize' => 10,
+    'deletePermanentlyAction' => 'deleteHistory()',
+]);
 ?>
 
 <section class="inventory-section" id="inventory">

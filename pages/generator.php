@@ -1,5 +1,5 @@
 <?php
-$pageTitle = 'Barcode & QR Code Generator';
+$pageTitle = 'Lot Management';
 $activeNav = 'barcode';
 
 require_once __DIR__ . '/../includes/auth.php';
@@ -46,8 +46,6 @@ if ($dbError !== '') {
                 <input type="file" id="importFile" accept=".csv,.xlsx,.xls" style="display:none;">
             <?php endif; ?>
         </div>
-
-        <?php include __DIR__ . '/../includes/inventory-add-card.php'; ?>
 
         <?php include __DIR__ . '/../includes/split-card.php'; ?>
 

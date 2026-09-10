@@ -139,6 +139,7 @@
                 const arr = Array.isArray(val) ? val : [val];
                 if (!arr.some((v) => filterSets[i].has(String(v)))) return false;
             }
+            if (cfg.customFilterMatch && !cfg.customFilterMatch(tr)) return false;
             return true;
         }
 
@@ -195,13 +196,15 @@
                     const arr = Array.isArray(vals) ? vals : [vals];
                     if (!arr.some((v) => filterSets[i].has(String(v)))) return false;
                 }
+                if (cfg.customDataMatch && !cfg.customDataMatch(row)) return false;
                 return true;
             });
         }
 
         function updateBadge() {
             if (!filterBadge) return;
-            const count = filterSets.reduce((n, s) => n + s.size, 0);
+            let count = filterSets.reduce((n, s) => n + s.size, 0);
+            if (cfg.customBadgeCount) count += cfg.customBadgeCount();
             filterBadge.textContent = count;
             filterBadge.style.display = count > 0 ? "" : "none";
         }
@@ -477,6 +480,14 @@
         }
 
         buildFilters();
+        if (cfg.onInit) {
+            cfg.onInit({
+                render: render,
+                debouncedRender: debouncedRender,
+                allRows: allRows,
+                updateBadge: updateBadge
+            });
+        }
         render(true);
     };
 
@@ -516,6 +527,7 @@
                         { value: 'in',       label: 'INBOUND' },
                         { value: 'out',      label: 'OUTBOUND' },
                         { value: 'check_in', label: 'CHECK IN' },
+                        { value: 'return',   label: 'RETURN' },
                         { value: 'transfer', label: 'TRANSFER' },
                     ],
                 },
@@ -543,25 +555,290 @@
 
     window.initInventoryTable = function () {
         if (!document.getElementById("inventoryTable")) return;
+
+        const isUnitsMode = (window.INVENTORY_MODE === 'units');
+        const selectedBrands = new Set();
+        let brandSearchText = "";
+        let selectedLocation = "";
+
+        window.clearInventoryFilters = function () {
+            const filterPanel = document.getElementById("filterPanel");
+            if (filterPanel) {
+                filterPanel.querySelectorAll("input").forEach((i) => { i.value = ""; });
+                filterPanel.querySelectorAll(".filter-chip").forEach((c) => { c.classList.remove("active"); });
+            }
+            const searchInput = document.getElementById("searchInput");
+            if (searchInput) {
+                searchInput.value = "";
+                searchInput.dispatchEvent(new Event("input"));
+            }
+        };
+
+        function getRowLocCategory(tr) {
+            if (tr.dataset && tr.dataset.locCategory) return tr.dataset.locCategory;
+            const dep = (tr.dataset && tr.dataset.deploymentSite ? tr.dataset.deploymentSite : "").trim();
+            const loc = (tr.dataset && tr.dataset.loc ? tr.dataset.loc : "").trim();
+            const st  = (tr.dataset && tr.dataset.status ? tr.dataset.status : "").toLowerCase().trim();
+            if (dep.startsWith("In Transit") || loc.startsWith("In Transit") || st === "in_transit") {
+                return "transit";
+            }
+            if (dep === "In Warehouse" || loc.startsWith("S") || loc === "In Warehouse") {
+                return "warehouse";
+            }
+            return "customer";
+        }
+
+        function unitsRowMatch(tr) {
+            if (!isUnitsMode) return true;
+
+            // Brand filter check
+            if (selectedBrands.size > 0) {
+                const b = (tr.dataset.brand || "").trim();
+                if (!selectedBrands.has(b)) return false;
+            } else if (brandSearchText) {
+                const b = (tr.dataset.brand || "").toLowerCase().trim();
+                if (!b.includes(brandSearchText)) return false;
+            }
+
+            // Location filter check
+            if (selectedLocation) {
+                const cat = getRowLocCategory(tr);
+                if (cat !== selectedLocation) return false;
+            }
+
+            return true;
+        }
+
+        function unitsDataMatch(row) {
+            if (!isUnitsMode) return true;
+
+            if (selectedBrands.size > 0) {
+                const b = (row.brand || "").trim();
+                if (!selectedBrands.has(b)) return false;
+            } else if (brandSearchText) {
+                const b = (row.brand || "").toLowerCase().trim();
+                if (!b.includes(brandSearchText)) return false;
+            }
+
+            if (selectedLocation) {
+                const cat = row.loc_category || (function () {
+                    const dep = (row.deployment_site || "").trim();
+                    const loc = (row.location || "").trim();
+                    const st  = (row.status || "").toLowerCase().trim();
+                    if (dep.startsWith("In Transit") || loc.startsWith("In Transit") || st === "in_transit") return "transit";
+                    if (dep === "In Warehouse" || loc.startsWith("S") || loc === "In Warehouse") return "warehouse";
+                    return "customer";
+                })();
+                if (cat !== selectedLocation) return false;
+            }
+
+            return true;
+        }
+
+        function unitsBadgeCount() {
+            if (!isUnitsMode) return 0;
+            let count = selectedBrands.size + (brandSearchText ? 1 : 0);
+            if (selectedLocation) count += 1;
+            return count;
+        }
+
+        function setupUnitsFilterControls(tableCtrl) {
+            if (!isUnitsMode) return;
+
+            const brandInput     = document.getElementById("unitBrandFilterInput");
+            const suggestBox     = document.getElementById("unitBrandSuggestBox");
+            const chipsContainer = document.getElementById("unitBrandChips");
+            const locationSelect = document.getElementById("unitLocationFilterSelect");
+            const resetBtn       = document.getElementById("unitFilterResetBtn");
+            const applyBtn       = document.getElementById("unitFilterApplyBtn");
+            const closeBtn       = document.querySelector("#filterPanel .filter-close-btn");
+            const filterWrap     = document.getElementById("filterWrap");
+
+            const facetBrands = (window.INVENTORY_FACETS && Array.isArray(window.INVENTORY_FACETS.brand)) ? window.INVENTORY_FACETS.brand : [];
+            const rowBrands   = tableCtrl.allRows().map((r) => (r.dataset.brand || "").trim()).filter(Boolean);
+            const allBrands   = Array.from(new Set(facetBrands.concat(rowBrands))).filter(Boolean).sort((a, b) => a.localeCompare(b));
+
+            function closeSuggestions() {
+                if (suggestBox) {
+                    suggestBox.innerHTML = "";
+                    suggestBox.style.display = "none";
+                }
+            }
+
+            function renderChips() {
+                if (!chipsContainer) return;
+                chipsContainer.innerHTML = "";
+                selectedBrands.forEach((b) => {
+                    const chip = document.createElement("span");
+                    chip.className = "filter-chip active";
+                    chip.style.display = "inline-flex";
+                    chip.style.alignItems = "center";
+                    chip.style.gap = "6px";
+                    chip.style.cursor = "default";
+                    
+                    const labelSpan = document.createElement("span");
+                    labelSpan.textContent = b;
+                    chip.appendChild(labelSpan);
+
+                    const removeBtn = document.createElement("span");
+                    removeBtn.innerHTML = "&times;";
+                    removeBtn.style.cursor = "pointer";
+                    removeBtn.style.fontWeight = "bold";
+                    removeBtn.style.fontSize = "14px";
+                    removeBtn.style.lineHeight = "1";
+                    removeBtn.title = "Remove brand";
+                    removeBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        selectedBrands.delete(b);
+                        renderChips();
+                        tableCtrl.render(true);
+                    };
+                    chip.appendChild(removeBtn);
+
+                    chipsContainer.appendChild(chip);
+                });
+            }
+
+            function renderSuggestions() {
+                if (!suggestBox || !brandInput) return;
+                const q = brandInput.value.trim().toLowerCase();
+                const matches = allBrands.filter((b) => {
+                    if (selectedBrands.has(b)) return false;
+                    return !q || b.toLowerCase().includes(q);
+                });
+
+                if (!matches.length) {
+                    if (q) {
+                        suggestBox.innerHTML = '<div class="suggest-item" style="color:var(--muted); font-size:12px; cursor:default; padding:8px 12px;">No matching brand</div>';
+                        suggestBox.style.display = "block";
+                    } else {
+                        closeSuggestions();
+                    }
+                    return;
+                }
+
+                suggestBox.innerHTML = "";
+                matches.slice(0, 20).forEach((brandName) => {
+                    const item = document.createElement("div");
+                    item.className = "suggest-item";
+                    item.style.padding = "8px 12px";
+                    item.style.cursor = "pointer";
+
+                    const lbl = document.createElement("div");
+                    lbl.className = "suggest-label";
+                    lbl.textContent = brandName;
+                    item.appendChild(lbl);
+
+                    item.onmousedown = (e) => {
+                        e.preventDefault();
+                        selectedBrands.add(brandName);
+                        brandInput.value = "";
+                        brandSearchText = "";
+                        closeSuggestions();
+                        renderChips();
+                        tableCtrl.render(true);
+                    };
+
+                    suggestBox.appendChild(item);
+                });
+                suggestBox.style.display = "block";
+            }
+
+            if (brandInput) {
+                brandInput.addEventListener("focus", renderSuggestions);
+                brandInput.addEventListener("input", () => {
+                    brandSearchText = brandInput.value.trim().toLowerCase();
+                    renderSuggestions();
+                    tableCtrl.render(true);
+                });
+                brandInput.addEventListener("keydown", (e) => {
+                    if (e.key === "Enter") {
+                        e.preventDefault();
+                        const q = brandInput.value.trim();
+                        if (q) {
+                            const exact = allBrands.find((b) => b.toLowerCase() === q.toLowerCase());
+                            selectedBrands.add(exact || q);
+                            brandInput.value = "";
+                            brandSearchText = "";
+                            closeSuggestions();
+                            renderChips();
+                            tableCtrl.render(true);
+                        }
+                    } else if (e.key === "Escape") {
+                        closeSuggestions();
+                    }
+                });
+                brandInput.addEventListener("blur", () => {
+                    setTimeout(closeSuggestions, 200);
+                });
+            }
+
+            if (locationSelect) {
+                locationSelect.addEventListener("change", () => {
+                    selectedLocation = locationSelect.value;
+                    tableCtrl.render(true);
+                });
+            }
+
+            if (resetBtn) {
+                resetBtn.addEventListener("click", () => {
+                    selectedBrands.clear();
+                    brandSearchText = "";
+                    if (brandInput) brandInput.value = "";
+                    closeSuggestions();
+                    renderChips();
+                    if (locationSelect) locationSelect.value = "";
+                    selectedLocation = "";
+                    tableCtrl.render(true);
+                });
+            }
+
+            if (applyBtn) {
+                applyBtn.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    closeSuggestions();
+                    if (filterWrap) filterWrap.classList.remove("open");
+                });
+            }
+
+            if (closeBtn) {
+                closeBtn.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    closeSuggestions();
+                    if (filterWrap) filterWrap.classList.remove("open");
+                });
+            }
+
+            document.addEventListener("click", (e) => {
+                if (suggestBox && !suggestBox.contains(e.target) && brandInput && !brandInput.contains(e.target)) {
+                    closeSuggestions();
+                }
+            });
+        }
+
         window.initDataTable({
-            searchInput:    '#searchInput',
-            sortSelect:     '#sortSelect',
-            tbody:          '#inventoryTable',
-            row:            '.inventory-row',
-            filterWrap:     '#filterWrap',
-            filterBtn:      '#filterBtn',
-            filterPanel:    '#filterPanel',
-            filterBadge:    '#filterBadge',
-            pagePrev:       '#pagePrev',
-            pageNext:       '#pageNext',
-            pageNumbers:    '#pageNumbers',
-            pageRange:      '#pageRange',
-            pagination:     '#pagination',
-            pageSizeSelect: '#pageSizeSelect',
-            exportFn:       'exportTable',
-            exportName:     'inventory',
-            defaultSortKey: 'newest',
-            defaultSortDir: 'desc',
+            searchInput:       '#searchInput',
+            sortSelect:        '#sortSelect',
+            tbody:             '#inventoryTable',
+            row:               '.inventory-row',
+            filterWrap:        '#filterWrap',
+            filterBtn:         '#filterBtn',
+            filterPanel:       '#filterPanel',
+            filterBadge:       '#filterBadge',
+            pagePrev:          '#pagePrev',
+            pageNext:          '#pageNext',
+            pageNumbers:       '#pageNumbers',
+            pageRange:         '#pageRange',
+            pagination:        '#pagination',
+            pageSizeSelect:    '#pageSizeSelect',
+            exportFn:          'exportTable',
+            exportName:        'inventory',
+            defaultSortKey:    'newest',
+            defaultSortDir:    'desc',
+            customFilterMatch: unitsRowMatch,
+            customDataMatch:   unitsDataMatch,
+            customBadgeCount:  unitsBadgeCount,
+            onInit:            setupUnitsFilterControls,
             sorters: {
                 'newest': function (a, b) { return (parseInt(b.dataset.id, 10) || 0) - (parseInt(a.dataset.id, 10) || 0); },
                 'oldest': function (a, b) { return (parseInt(a.dataset.id, 10) || 0) - (parseInt(b.dataset.id, 10) || 0); },

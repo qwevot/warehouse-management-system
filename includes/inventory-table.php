@@ -16,7 +16,7 @@ require_once __DIR__ . '/data-pagination.php';
 $emptyMessage  = $emptyMessage ?? 'No items registered yet.';
 $mode          = $mode ?? 'list';
 $tableColumns  = $tableColumns ?? inventory_columns($mode);
-$rowSelectable = $rowSelectable ?? ($mode === 'generator');
+$rowSelectable = $rowSelectable ?? ($mode === 'generator' || $mode === 'list');
 $state         = $state ?? [];
 $total         = $total ?? count($rows ?? $inventory ?? []);
 $facets        = $facets ?? ['brand' => [], 'shelf' => [], 'row' => [], 'col' => []];
@@ -32,10 +32,40 @@ $inventorySortOptions = [
     ['modified-asc', 'Last Modified (Oldest)'],
 ];
 
-$axisPanelHtml = '
+if ($mode === 'units') {
+    $axisPanelHtml = '
+<div class="filter-panel-header">
+    <span class="filter-panel-title">Filter Units</span>
+    <button type="button" class="filter-close-btn" aria-label="Close">&times;</button>
+</div>
+<div class="filter-panel-content">
+    <div class="filter-group">
+        <div class="filter-group-title">Brand</div>
+        <div class="suggest-wrap" style="position:relative; width:100%;">
+            <input type="text" id="unitBrandFilterInput" class="filter-brand-input" placeholder="Search brand..." autocomplete="off" style="width:100%; height:38px; border:1px solid var(--border); border-radius:8px; padding:0 12px; font-size:13px; background:#fff; outline:none; color:var(--text);">
+            <div class="suggest-box" id="unitBrandSuggestBox" style="position:absolute; top:calc(100% + 4px); left:0; right:0; z-index:150; max-height:160px; overflow-y:auto; background:#fff; border:1px solid var(--border); border-radius:8px; box-shadow:0 8px 24px rgba(15,23,42,0.15); display:none;"></div>
+        </div>
+        <div class="filter-options-chips" id="unitBrandChips" style="margin-top:8px;"></div>
+    </div>
+    <div class="filter-group">
+        <div class="filter-group-title">Location</div>
+        <select id="unitLocationFilterSelect" class="filter-location-select" style="width:100%; height:38px; border:1px solid var(--border); border-radius:8px; padding:0 12px; font-size:13px; background:#fff; outline:none; color:var(--text); cursor:pointer;">
+            <option value="">All Locations</option>
+            <option value="warehouse">In Warehouse</option>
+            <option value="transit">In Transit</option>
+            <option value="customer">Customer</option>
+        </select>
+    </div>
+</div>
+<div class="filter-panel-footer">
+    <button type="button" class="btn sm secondary" id="unitFilterResetBtn">Reset All</button>
+    <button type="button" class="btn sm primary" id="unitFilterApplyBtn">Apply Filters</button>
+</div>';
+} else {
+    $axisPanelHtml = '
 <div class="filter-panel-header">
     <span class="filter-panel-title">Filter Options</span>
-    <button type="button" class="filter-close-btn" onclick="toggleFilterPanel()" aria-label="Close">&times;</button>
+    <button type="button" class="filter-close-btn" onclick="document.getElementById(\'filterWrap\') && document.getElementById(\'filterWrap\').classList.remove(\'open\')" aria-label="Close">&times;</button>
 </div>
 <div class="filter-panel-content">
     <div class="filter-group">
@@ -69,9 +99,10 @@ $axisPanelHtml = '
     </div>
 </div>
 <div class="filter-panel-footer">
-    <button type="button" class="btn sm secondary" onclick="clearFilters()">Reset All</button>
-    <button type="button" class="btn sm primary" onclick="toggleFilterPanel()">Apply Filters</button>
+    <button type="button" class="btn sm secondary" onclick="window.clearInventoryFilters && window.clearInventoryFilters()">Reset All</button>
+    <button type="button" class="btn sm primary" onclick="document.getElementById(\'filterWrap\') && document.getElementById(\'filterWrap\').classList.remove(\'open\')">Apply Filters</button>
 </div>';
+}
 
 $inventoryToolbar = buildToolbar('', $inventorySortOptions, [
     'ids' => [
@@ -88,6 +119,7 @@ $inventoryPagination = buildPagination('', [
         'nums' => 'pageNumbers', 'range' => 'pageRange', 'size' => 'pageSizeSelect',
     ],
     'pageSize' => (int)($state['size'] ?? 10),
+    'deletePermanentlyAction' => ($mode === 'bin') ? 'deleteAllBinnedItems()' : null,
 ]);
 ?>
 <div class="toolbar-row"><?php echo $inventoryToolbar; ?></div>
@@ -210,8 +242,13 @@ $inventoryPagination = buildPagination('', [
 
                         <?php if (col_on($tableColumns, 'status')): ?>
                             <td data-label="Status">
-                                <span class="status <?php echo e($item['status']); ?>">
-                                    <?php echo $item['status'] === 'available' ? 'AVAILABLE' : ($item['status'] === 'in_transit' ? 'IN TRANSIT' : 'TAKEN'); ?>
+                                <?php
+                                $isInactive = (!empty($item['deleted_at']) || in_array(strtolower((string)$item['status']), ['inactive', 'taken'], true));
+                                $stLabel = $isInactive ? 'INACTIVE' : 'ACTIVE';
+                                $stClass = $isInactive ? 'inactive' : 'available';
+                                ?>
+                                <span class="status <?php echo $stClass; ?>">
+                                    <?php echo $stLabel; ?>
                                 </span>
                             </td>
                         <?php endif; ?>
@@ -231,9 +268,9 @@ $inventoryPagination = buildPagination('', [
                         <?php endif; ?>
 
                         <?php if (col_on($tableColumns, 'qr')): ?>
-                            <td data-label="QR Code">
-                                <button type="button" class="btn icon-btn view" title="View Details / QR Code" onclick="openItemModal(<?php echo (int)($item['inventory_id'] ?? $item['id']); ?>)">
-                                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+                            <td data-label="Print Label">
+                                <button type="button" class="btn icon-btn view" title="Print Label" onclick="openPrintUnitModal(<?php echo (int)$item['id']; ?>)">
+                                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
                                 </button>
                             </td>
                         <?php endif; ?>

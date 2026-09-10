@@ -19,13 +19,15 @@
             <label class="btn upload scan-upload" for="scanFile">Take / Upload Photo to Scan</label>
             <input type="file" id="scanFile" accept="image/*" capture="environment" style="display:none;">
 
-            <div class="scan-or">— or enter SN / Barcode manually —</div>
-            <div style="display:flex; gap:8px; margin-top:4px;">
-                <input type="text" id="manualScanCode" placeholder="Enter Serial (SN-...) or Barcode..." class="form-input" style="flex:1; padding:8px 12px; border:1.5px solid var(--border); border-radius:6px; font-size:13px;" autocomplete="off">
-                <button type="button" class="btn secondary" onclick="handleManualScanCode()">Lookup</button>
+            <div class="field" style="margin-top:12px;">
+                <label for="manualScanCode">Serial Number (SN) or Barcode</label>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <input type="text" id="manualScanCode" placeholder="e.g. SN-2026-00001 or Barcode..." autocomplete="off" style="flex:1;">
+                    <button type="button" class="btn secondary" style="margin:0; height:40px;" onclick="handleManualScanCode()">Lookup</button>
+                </div>
+                <div id="scanMsg" class="scan-result" style="display:none; margin-top:8px;"></div>
             </div>
 
-            <div id="scanMsg" class="scan-result" style="display:none; margin-top:12px;"></div>
         </div>
         <div class="modal-footer">
             <button type="button" class="btn secondary" onclick="closeScanModal()">Cancel</button>
@@ -42,6 +44,11 @@
     function setMsg(html, isError) {
         const el = document.getElementById("scanMsg");
         if (!el) return;
+        if (!html) {
+            el.style.display = "none";
+            el.innerHTML = "";
+            return;
+        }
         el.style.display = "block";
         el.className = "scan-result" + (isError ? " error" : "");
         el.innerHTML = html;

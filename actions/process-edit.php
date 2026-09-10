@@ -8,13 +8,10 @@ require_can('inventory.manage');
 
 $pdo = html_db('index');
 
-$id          = (int)($_POST['id'] ?? 0);
-$name        = trim($_POST['item_name'] ?? '');
-$location    = trim($_POST['location'] ?? '');
-$brand       = trim($_POST['brand'] ?? '');
-$quantity    = max(1, (int)($_POST['quantity'] ?? 1));
-$serialInput = trim($_POST['serial'] ?? '');
-$photoData   = $_POST['photo'] ?? '';
+$id        = (int)($_POST['id'] ?? 0);
+$name      = trim($_POST['item_name'] ?? '');
+$brand     = trim($_POST['brand'] ?? '');
+$photoData = $_POST['photo'] ?? '';
 
 $item = find_item($pdo, $id);
 
@@ -31,9 +28,8 @@ if ((int)$st->fetchColumn() === 0) {
     fail('Please choose a product name and brand that exist in Master Items.');
 }
 
-// UPDATE: apply the edited fields to the item row.
+// UPDATE: apply the edited fields (name, brand, photo) to the item row.
 $modifiedBy = current_user_name();
-$oldQty = (int)$item['quantity'];
 
 // Replace the photo only when a new one was captured/uploaded.
 $photo = $item['photo'];
@@ -49,13 +45,8 @@ if ($photoData !== '') {
 }
 
 $pdo->prepare(
-    'UPDATE inventory_list SET name = ?, brand = ?, quantity = ?, location = ?, photo = ?, updated_at = NOW(), modified_by = ? WHERE id = ?'
-)->execute([$name, $brand, $quantity, $location, $photo, $modifiedBy, $id]);
-
-// If quantity increased, provision additional serialized units
-if ($quantity > $oldQty) {
-    provision_inventory_units($pdo, $id, $quantity - $oldQty, $modifiedBy);
-}
+    'UPDATE inventory_list SET name = ?, brand = ?, photo = ?, updated_at = NOW(), modified_by = ? WHERE id = ?'
+)->execute([$name, $brand, $photo, $modifiedBy, $id]);
 
 header('Location: ' . BASE_URL . '/pages/index.php?edited=' . urlencode($name));
 exit;

@@ -36,9 +36,13 @@ try {
 
     $modifiedBy = current_user_name();
 
-    // Update the item's location.
-    $pdo->prepare('UPDATE inventory_list SET location = ?, updated_at = NOW(), modified_by = ? WHERE id = ?')
-        ->execute([$destination, $modifiedBy, $itemId]);
+    // Update the item's location, bin_location, and deployment_site.
+    $pdo->prepare('UPDATE inventory_list SET location = ?, bin_location = ?, deployment_site = ?, updated_at = NOW(), modified_by = ? WHERE id = ?')
+        ->execute([$destination, $destination, 'In Warehouse', $modifiedBy, $itemId]);
+
+    // Also update any units that were physically located with this lot in the warehouse
+    $pdo->prepare("UPDATE inventory_units SET location = ?, bin_location = ?, deployment_site = 'In Warehouse', updated_at = NOW(), modified_by = ? WHERE inventory_id = ? AND deleted_at IS NULL AND deployment_site = 'In Warehouse'")
+        ->execute([$destination, $destination, $modifiedBy, $itemId]);
 
     // Log the move so a history is kept.
     $log = 'Moved from ' . ($old !== '' ? $old : 'N/A') . ' to ' . $destination;

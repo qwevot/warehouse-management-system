@@ -42,12 +42,33 @@ if ($id > 0) {
     $pdo->prepare(
         'UPDATE master_items SET product_code = ?, product_name = ?, brand = ?, product_class = ?, updated_at = NOW(), modified_by = ? WHERE id = ?'
     )->execute([$productCode, $productName, $brand, $productClass, $modifiedBy, $id]);
+    $targetItemId = $id;
     $message = 'Master item "' . $productName . '" updated.';
 } else {
     $pdo->prepare(
         'INSERT INTO master_items (product_code, product_name, brand, product_class, updated_at, modified_by) VALUES (?, ?, ?, ?, NOW(), ?)'
     )->execute([$productCode, $productName, $brand, $productClass, $modifiedBy]);
+    $targetItemId = (int)$pdo->lastInsertId();
     $message = 'Master item "' . $productName . '" added.';
+}
+
+// Persist low stock notification settings if submitted (from edit modal)
+if (isset($_POST['alert_enabled']) || isset($_POST['threshold'])) {
+    $alertEnabled = isset($_POST['alert_enabled']) && $_POST['alert_enabled'] == '1' ? 1 : 0;
+    $thresholdRaw = trim($_POST['threshold'] ?? '');
+    $thresholdVal = ($thresholdRaw !== '' && is_numeric($thresholdRaw)) ? (int)$thresholdRaw : 5;
+    if ($thresholdVal < 0) $thresholdVal = 0;
+
+    $stAlert = $pdo->prepare("
+        INSERT INTO item_alert_settings (master_item_id, alert_enabled, threshold, updated_by, updated_at)
+        VALUES (?, ?, ?, ?, NOW())
+        ON DUPLICATE KEY UPDATE 
+            alert_enabled = VALUES(alert_enabled),
+            threshold = VALUES(threshold),
+            updated_by = VALUES(updated_by),
+            updated_at = NOW()
+    ");
+    $stAlert->execute([$targetItemId, $alertEnabled, $thresholdVal, $modifiedBy]);
 }
 
 redirect_to('items', 'added', $message);

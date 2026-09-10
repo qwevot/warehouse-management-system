@@ -199,25 +199,29 @@
         f.submit();
     };
 
-    window.runDeleteItem = async function (id) {
+    window.runDeleteItem = async function (id, type) {
+        const entityType = type || (window.INVENTORY_MODE === 'units' || window.INVENTORY_MODE === 'bin' ? 'unit' : 'lot');
+        const isLot = entityType === 'lot';
         const note = await promptModal({
-            title: "Move item to the bin?",
-            message: "This item will be moved to the bin.",
+            title: isLot ? "Move lot to the bin?" : "Move item to the bin?",
+            message: isLot ? "This lot and every unit in this lot will be moved to the bin." : "This item will be moved to the bin.",
             placeholder: "Optional bin note",
             confirmLabel: "Move to Bin",
         });
         if (note === null) return;
-        runAction(BASE + "/actions/delete-item.php", { id: id, note: note }, null, "Delete failed.", "Item moved to the bin.");
+        runAction(BASE + "/actions/delete-item.php", { id: id, note: note, type: entityType }, null, "Delete failed.", isLot ? "Lot and all its units moved to the bin." : "Item moved to the bin.");
     };
 
-    window.runRestoreItem = function (id) {
+    window.runRestoreItem = function (id, type) {
+        const entityType = type || (window.INVENTORY_MODE === 'units' || window.INVENTORY_MODE === 'bin' ? 'unit' : 'lot');
         if (!confirm("Restore this item to the inventory?")) return;
-        runAction(BASE + "/actions/restore-item.php", { id: id }, null, "Restore failed.", "Item restored.");
+        runAction(BASE + "/actions/restore-item.php", { id: id, type: entityType }, null, "Restore failed.", "Item restored.");
     };
 
-    window.runPermanentDelete = function (id) {
+    window.runPermanentDelete = function (id, type) {
+        const entityType = type || (window.INVENTORY_MODE === 'units' || window.INVENTORY_MODE === 'bin' ? 'unit' : 'lot');
         if (!confirm("Permanently delete this item? This cannot be undone.")) return;
-        runAction(BASE + "/actions/delete-permanent.php", { id: id }, null, "Delete failed.", "Item permanently deleted.");
+        runAction(BASE + "/actions/delete-permanent.php", { id: id, type: entityType }, null, "Delete failed.", "Item permanently deleted.");
     };
 
     window.runEditMoveToBin = function () {

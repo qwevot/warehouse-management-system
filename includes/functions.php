@@ -8,6 +8,26 @@ function e($value): string
     return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
 }
 
+function get_system_setting(PDO $pdo, string $key, string $default = ''): string
+{
+    try {
+        $st = $pdo->prepare('SELECT setting_value FROM system_settings WHERE setting_key = ? LIMIT 1');
+        $st->execute([$key]);
+        $val = $st->fetchColumn();
+        return $val !== false ? (string)$val : $default;
+    } catch (Exception $e) {
+        return $default;
+    }
+}
+
+function set_system_setting(PDO $pdo, string $key, string $value, ?string $updatedBy = null): void
+{
+    $st = $pdo->prepare('INSERT INTO system_settings (setting_key, setting_value, updated_by, updated_at) 
+                         VALUES (?, ?, ?, NOW()) 
+                         ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), updated_by = VALUES(updated_by), updated_at = NOW()');
+    $st->execute([$key, $value, $updatedBy]);
+}
+
 
 function ean13(string $digits12): string
 {
@@ -269,15 +289,17 @@ function provision_inventory_units(PDO $pdo, int $inventoryId, int $count, ?stri
 {
     if ($count <= 0) return [];
 
-    $st = $pdo->prepare("SELECT name, brand, location, barcode FROM inventory_list WHERE id = ?");
+    $st = $pdo->prepare("SELECT name, brand, location, bin_location, deployment_site, barcode FROM inventory_list WHERE id = ?");
     $st->execute([$inventoryId]);
     $item = $st->fetch(PDO::FETCH_ASSOC);
     if (!$item) return [];
 
-    $name     = (string)$item['name'];
-    $brand    = (string)($item['brand'] ?? '');
-    $location = (string)($item['location'] ?? '');
-    $barcode  = (string)($item['barcode'] ?? '');
+    $name           = (string)$item['name'];
+    $brand          = (string)($item['brand'] ?? '');
+    $binLocation    = $item['bin_location'] ?? (preg_match('/^S\d+-R\d+-C\d+/', (string)($item['location'] ?? '')) ? $item['location'] : null);
+    $deploymentSite = (string)($item['deployment_site'] ?? ($binLocation ? 'In Warehouse' : ($item['location'] ?: 'In Warehouse')));
+    $location       = $binLocation ?: $deploymentSite;
+    $barcode        = (string)($item['barcode'] ?? '');
 
     $created = [];
     for ($i = 0; $i < $count; $i++) {
@@ -285,9 +307,9 @@ function provision_inventory_units(PDO $pdo, int $inventoryId, int $count, ?stri
         $qr = qr_for_unit($unitSerial, $barcode, $name, $brand, $location);
 
         $pdo->prepare(
-            "INSERT INTO inventory_units (inventory_id, serial, qr, status, modified_by, created_at, updated_at)
-             VALUES (?, ?, ?, 'available', ?, NOW(), NOW())"
-        )->execute([$inventoryId, $unitSerial, $qr, $modifiedBy]);
+            "INSERT INTO inventory_units (inventory_id, serial, qr, status, location, bin_location, deployment_site, modified_by, created_at, updated_at)
+             VALUES (?, ?, ?, 'available', ?, ?, ?, ?, NOW(), NOW())"
+        )->execute([$inventoryId, $unitSerial, $qr, $location, $binLocation, $deploymentSite, $modifiedBy]);
 
         $created[] = [
             'id'     => (int)$pdo->lastInsertId(),
@@ -300,15 +322,19 @@ function provision_inventory_units(PDO $pdo, int $inventoryId, int $count, ?stri
 }
 
 // CREATE: insert an inventory row and derive its barcode and unit records
-function create_inventory_item(PDO $pdo, array $fields, ?string $serial = null, ?string $barcode = null): array
+function create_inventory_item(PDO $pdo, array $fields, ?string $barcode = null): array
 {
     $name       = (string)($fields['name'] ?? '');
     $brand      = $fields['brand'] ?? null;
     $quantity   = max(0, (int)($fields['quantity'] ?? 1));
-    $location   = $fields['location'] ?? null;
+    $rawLoc     = trim((string)($fields['location'] ?? ''));
     $photo      = (string)($fields['photo'] ?? '');
     $status     = (string)($fields['status'] ?? 'available');
     $modifiedBy = $fields['modified_by'] ?? null;
+
+    $binLocation    = $fields['bin_location'] ?? (preg_match('/^S\d+-R\d+-C\d+/', $rawLoc) ? $rawLoc : null);
+    $deploymentSite = $fields['deployment_site'] ?? ($binLocation !== null ? 'In Warehouse' : ($rawLoc !== '' ? $rawLoc : 'In Warehouse'));
+    $location       = $rawLoc !== '' ? $rawLoc : ($binLocation ?: $deploymentSite);
 
     if ($barcode === null || $barcode === '') {
         $barcode = barcode_for_item($pdo, [
@@ -322,9 +348,9 @@ function create_inventory_item(PDO $pdo, array $fields, ?string $serial = null, 
     $qr = "BARCODE: {$barcode}\nITEM: {$name}\nBRAND: " . ($brand ?: 'N/A') . "\nLOC: " . ($location ?: 'N/A');
 
     $pdo->prepare(
-        "INSERT INTO inventory_list (name, brand, quantity, location, barcode, qr, photo, status, modified_by, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())"
-    )->execute([$name, $brand, $quantity, $location, $barcode, $qr, $photo, $status, $modifiedBy]);
+        "INSERT INTO inventory_list (name, brand, quantity, location, bin_location, deployment_site, barcode, qr, photo, status, modified_by, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())"
+    )->execute([$name, $brand, $quantity, $location, $binLocation, $deploymentSite, $barcode, $qr, $photo, $status, $modifiedBy]);
 
     $id = (int)$pdo->lastInsertId();
 
@@ -359,9 +385,11 @@ function fetch_movements(PDO $pdo, ?int $limit = null): array
 function fetch_active_items(PDO $pdo): array
 {
     return $pdo->query(
-        "SELECT id, name, brand, serial, quantity, location, barcode, qr, status, photo, created_at
+        "SELECT id, name, brand, serial, quantity, location, bin_location, deployment_site, barcode, qr, status, photo, created_at
            FROM inventory_list
           WHERE deleted_at IS NULL
+            AND status = 'available'
+            AND deployment_site = 'In Warehouse'
           ORDER BY name ASC"
     )->fetchAll();
 }
@@ -373,6 +401,7 @@ function movement_type_labels(): array
         'out'      => 'OUTBOUND',
         'transfer' => 'TRANSFER',
         'check_in' => 'CHECK IN',
+        'return'   => 'RETURN',
     ];
 }
 
@@ -382,13 +411,14 @@ function movement_status_class(?string $type): string
         'in'       => 'inbound',
         'out'      => 'outbound',
         'check_in' => 'check-in',
+        'return'   => 'return',
         default    => 'transfer',
     };
 }
 
 function movement_qty(string $type, $quantity): string
 {
-    if ($type === 'in') {
+    if ($type === 'in' || $type === 'return') {
         return '+' . (int)$quantity;
     }
     if ($type === 'out') {
@@ -471,7 +501,7 @@ function handle_master_lifecycle(string $entity, string $action, int $id, ?strin
     }
 }
 
-function handle_inventory_lifecycle(string $action, int $id, string $note = ''): void
+function handle_inventory_lifecycle(string $action, int $id, string $note = '', string $type = ''): void
 {
     require_login_api();
     $requiredPerm = ($action === 'permanent_delete') ? 'permanent_delete' : 'inventory.manage';
@@ -480,80 +510,164 @@ function handle_inventory_lifecycle(string $action, int $id, string $note = ''):
     $pdo = json_db();
     $modifiedBy = current_user_name();
 
-    // 1. Check if ID matches an individual unit
-    if ($action === 'restore') {
-        $unitSt = $pdo->prepare("SELECT u.*, i.deleted_at AS parent_deleted_at FROM inventory_units u JOIN inventory_list i ON i.id = u.inventory_id WHERE u.id = ?");
-    } else {
-        $unitSt = $pdo->prepare("SELECT * FROM inventory_units WHERE id = ?");
-    }
-    $unitSt->execute([$id]);
-    $unit = $unitSt->fetch();
+    // 1. If explicitly requested as 'unit' or if not a lot:
+    $isUnit = ($type === 'unit');
+    $isLot  = ($type === 'lot');
 
-    if ($unit) {
-        if ($action === 'delete') {
-            $pdo->prepare("UPDATE inventory_units SET deleted_at = NOW(), status = 'taken', bin_note = ?, updated_at = NOW(), modified_by = ? WHERE id = ?")
-                ->execute([$note ?: null, $modifiedBy, $id]);
-            $pdo->prepare("UPDATE inventory_list SET quantity = (SELECT COUNT(*) FROM inventory_units WHERE inventory_id = ? AND deleted_at IS NULL), updated_at = NOW(), modified_by = ? WHERE id = ?")
-                ->execute([$unit['inventory_id'], $modifiedBy, $unit['inventory_id']]);
-            json_ok();
-        } elseif ($action === 'permanent_delete') {
-            if ($unit['deleted_at'] === null) {
-                json_fail('Only bin units can be permanently deleted.');
-            }
-            $inventoryId = (int)$unit['inventory_id'];
-            $pdo->prepare("DELETE FROM inventory_units WHERE id = ?")->execute([$id]);
-            $remSt = $pdo->prepare("SELECT COUNT(*) FROM inventory_units WHERE inventory_id = ?");
-            $remSt->execute([$inventoryId]);
-            $remaining = (int)$remSt->fetchColumn();
+    // If type is not explicitly forced to 'lot', check if it's a unit (only if $isUnit is true or $isLot is false)
+    if ($isUnit) {
+        $unitSt = ($action === 'restore')
+            ? $pdo->prepare("SELECT u.*, i.deleted_at AS parent_deleted_at FROM inventory_units u JOIN inventory_list i ON i.id = u.inventory_id WHERE u.id = ?")
+            : $pdo->prepare("SELECT * FROM inventory_units WHERE id = ?");
+        $unitSt->execute([$id]);
+        $unit = $unitSt->fetch();
 
-            if ($remaining === 0) {
-                $parent = find_item($pdo, $inventoryId);
-                if ($parent) {
-                    delete_photo($parent['photo']);
-                    $pdo->prepare("DELETE FROM inventory_list WHERE id = ?")->execute([$inventoryId]);
+        if ($unit) {
+            if ($action === 'delete') {
+                $pdo->prepare("UPDATE inventory_units SET deleted_at = NOW(), status = 'inactive', bin_note = ?, updated_at = NOW(), modified_by = ? WHERE id = ?")
+                    ->execute([$note ?: null, $modifiedBy, $id]);
+                $pdo->prepare("UPDATE inventory_list SET quantity = (SELECT COUNT(*) FROM inventory_units WHERE inventory_id = ? AND deleted_at IS NULL), updated_at = NOW(), modified_by = ? WHERE id = ?")
+                    ->execute([$unit['inventory_id'], $modifiedBy, $unit['inventory_id']]);
+                json_ok();
+            } elseif ($action === 'permanent_delete') {
+                if ($unit['deleted_at'] === null) {
+                    json_fail('Only bin units can be permanently deleted.');
                 }
-            } else {
+                $inventoryId = (int)$unit['inventory_id'];
+                $pdo->prepare("DELETE FROM inventory_units WHERE id = ?")->execute([$id]);
+                $remSt = $pdo->prepare("SELECT COUNT(*) FROM inventory_units WHERE inventory_id = ?");
+                $remSt->execute([$inventoryId]);
+                $remaining = (int)$remSt->fetchColumn();
+
+                if ($remaining === 0) {
+                    $parent = find_item($pdo, $inventoryId);
+                    if ($parent) {
+                        delete_photo($parent['photo']);
+                        $pdo->prepare("DELETE FROM inventory_list WHERE id = ?")->execute([$inventoryId]);
+                    }
+                } else {
+                    $pdo->prepare("UPDATE inventory_list SET quantity = (SELECT COUNT(*) FROM inventory_units WHERE inventory_id = ? AND deleted_at IS NULL) WHERE id = ?")
+                        ->execute([$inventoryId, $inventoryId]);
+                }
+                json_ok();
+            } elseif ($action === 'restore') {
+                if ($unit['parent_deleted_at'] !== null) {
+                    $pdo->prepare("UPDATE inventory_list SET deleted_at = NULL, status = 'available', bin_note = NULL, updated_at = NOW() WHERE id = ?")
+                        ->execute([$unit['inventory_id']]);
+                }
+                $pdo->prepare("UPDATE inventory_units SET deleted_at = NULL, bin_note = NULL, status = 'available', updated_at = NOW() WHERE id = ?")
+                    ->execute([$id]);
                 $pdo->prepare("UPDATE inventory_list SET quantity = (SELECT COUNT(*) FROM inventory_units WHERE inventory_id = ? AND deleted_at IS NULL) WHERE id = ?")
-                    ->execute([$inventoryId, $inventoryId]);
+                    ->execute([$unit['inventory_id'], $unit['inventory_id']]);
+                json_ok();
             }
-            json_ok();
-        } elseif ($action === 'restore') {
-            if ($unit['parent_deleted_at'] !== null) {
-                $pdo->prepare("UPDATE inventory_list SET deleted_at = NULL, status = 'available', bin_note = NULL, updated_at = NOW() WHERE id = ?")
-                    ->execute([$unit['inventory_id']]);
-            }
-            $pdo->prepare("UPDATE inventory_units SET deleted_at = NULL, bin_note = NULL, status = 'available', updated_at = NOW() WHERE id = ?")
-                ->execute([$id]);
-            $pdo->prepare("UPDATE inventory_list SET quantity = (SELECT COUNT(*) FROM inventory_units WHERE inventory_id = ? AND deleted_at IS NULL) WHERE id = ?")
-                ->execute([$unit['inventory_id'], $unit['inventory_id']]);
-            json_ok();
         }
     }
 
-    // 2. Fallback: batch item in inventory_list
+    // 2. Lot in inventory_list (Warehouse Lots / Split & Merge)
     $item = find_item($pdo, $id);
-    if ($item === null) {
+    if ($item === null && !$isLot) {
+        // If not found in inventory_list and not explicitly lot, fallback to check inventory_units
+        $unitSt = $pdo->prepare("SELECT * FROM inventory_units WHERE id = ?");
+        $unitSt->execute([$id]);
+        $unit = $unitSt->fetch();
+        if ($unit) {
+            if ($action === 'delete') {
+                $pdo->prepare("UPDATE inventory_units SET deleted_at = NOW(), status = 'inactive', bin_note = ?, updated_at = NOW(), modified_by = ? WHERE id = ?")
+                    ->execute([$note ?: null, $modifiedBy, $id]);
+                $pdo->prepare("UPDATE inventory_list SET quantity = (SELECT COUNT(*) FROM inventory_units WHERE inventory_id = ? AND deleted_at IS NULL), updated_at = NOW(), modified_by = ? WHERE id = ?")
+                    ->execute([$unit['inventory_id'], $modifiedBy, $unit['inventory_id']]);
+                json_ok();
+            } elseif ($action === 'permanent_delete') {
+                $inventoryId = (int)$unit['inventory_id'];
+                $pdo->prepare("DELETE FROM inventory_units WHERE id = ?")->execute([$id]);
+                $pdo->prepare("UPDATE inventory_list SET quantity = (SELECT COUNT(*) FROM inventory_units WHERE inventory_id = ? AND deleted_at IS NULL) WHERE id = ?")
+                    ->execute([$inventoryId, $inventoryId]);
+                json_ok();
+            } elseif ($action === 'restore') {
+                $pdo->prepare("UPDATE inventory_units SET deleted_at = NULL, bin_note = NULL, status = 'available', updated_at = NOW() WHERE id = ?")
+                    ->execute([$id]);
+                $pdo->prepare("UPDATE inventory_list SET quantity = (SELECT COUNT(*) FROM inventory_units WHERE inventory_id = ? AND deleted_at IS NULL) WHERE id = ?")
+                    ->execute([$unit['inventory_id'], $unit['inventory_id']]);
+                json_ok();
+            }
+        }
         json_fail('Item or unit not found.');
     }
 
-    if ($action === 'delete') {
-        $pdo->prepare("UPDATE inventory_list SET deleted_at = NOW(), status = 'taken', bin_note = ?, updated_at = NOW(), modified_by = ? WHERE id = ?")
-            ->execute([$note ?: null, $modifiedBy, $item['id']]);
-        $pdo->prepare("UPDATE inventory_units SET deleted_at = NOW(), status = 'taken', bin_note = ?, updated_at = NOW(), modified_by = ? WHERE inventory_id = ? AND deleted_at IS NULL")
-            ->execute([$note ?: null, $modifiedBy, $item['id']]);
-        json_ok();
-    } elseif ($action === 'permanent_delete') {
-        if ($item['deleted_at'] === null) {
-            json_fail('Only bin items can be permanently deleted.');
+    if ($item !== null) {
+        if ($action === 'delete') {
+            // Bin the whole lot
+            $pdo->prepare("UPDATE inventory_list SET deleted_at = NOW(), status = 'inactive', bin_note = ?, updated_at = NOW(), modified_by = ? WHERE id = ?")
+                ->execute([$note ?: null, $modifiedBy, $item['id']]);
+            // Bin EVERY single unit belonging to this lot
+            $pdo->prepare("UPDATE inventory_units SET deleted_at = NOW(), status = 'inactive', bin_note = ?, updated_at = NOW(), modified_by = ? WHERE inventory_id = ? AND deleted_at IS NULL")
+                ->execute([$note ?: null, $modifiedBy, $item['id']]);
+            json_ok();
+        } elseif ($action === 'permanent_delete') {
+            if ($item['deleted_at'] === null) {
+                json_fail('Only bin items can be permanently deleted.');
+            }
+            delete_photo($item['photo']);
+            $pdo->prepare('DELETE FROM inventory_units WHERE inventory_id = ?')->execute([$item['id']]);
+            $pdo->prepare('DELETE FROM inventory_list WHERE id = ?')->execute([$item['id']]);
+            json_ok();
+        } elseif ($action === 'restore') {
+            $pdo->prepare("UPDATE inventory_list SET deleted_at = NULL, status = 'available', bin_note = NULL, updated_at = NOW() WHERE id = ?")->execute([$item['id']]);
+            $pdo->prepare("UPDATE inventory_units SET deleted_at = NULL, bin_note = NULL, status = 'available', updated_at = NOW() WHERE inventory_id = ?")->execute([$item['id']]);
+            json_ok();
         }
-        delete_photo($item['photo']);
-        $pdo->prepare('DELETE FROM inventory_list WHERE id = ?')->execute([$item['id']]);
-        json_ok();
-    } elseif ($action === 'restore') {
-        $pdo->prepare("UPDATE inventory_list SET deleted_at = NULL, status = 'available', bin_note = NULL, updated_at = NOW() WHERE id = ?")->execute([$item['id']]);
-        $pdo->prepare("UPDATE inventory_units SET deleted_at = NULL, bin_note = NULL, status = 'available', updated_at = NOW() WHERE inventory_id = ?")->execute([$item['id']]);
-        json_ok();
     }
 
     json_fail('Invalid action.');
 }
+
+/**
+ * Classify a unit or item location into one of three standardized domain categories:
+ * 'warehouse' | 'transit' | 'customer'
+ *
+ * Single source of truth for location taxonomy across the system.
+ */
+function classify_unit_location(string $deploymentSite = '', string $location = '', string $status = '', string $binLocation = ''): string
+{
+    $dep = trim($deploymentSite);
+    $loc = trim($location);
+    $bin = trim($binLocation);
+    $st  = strtolower(trim($status));
+
+    if (str_starts_with($dep, 'In Transit') || str_starts_with($loc, 'In Transit') || $st === 'in_transit') {
+        return 'transit';
+    }
+
+    if ($dep === 'In Warehouse' || $bin !== '' || preg_match('/^S\d+-R\d+-C\d+/', $loc) || $loc === 'In Warehouse') {
+        return 'warehouse';
+    }
+
+    return 'customer';
+}
+
+/**
+ * Classify directly from a unit/item database record array.
+ */
+function classify_record_location(array $record): string
+{
+    return classify_unit_location(
+        (string)($record['deployment_site'] ?? ''),
+        (string)($record['location'] ?? ''),
+        (string)($record['status'] ?? ''),
+        (string)($record['bin_location'] ?? '')
+    );
+}
+
+/**
+ * Return user-facing display label for a location category.
+ */
+function location_category_label(string $category): string
+{
+    return match ($category) {
+        'transit'   => 'In Transit',
+        'customer'  => 'Customer Site',
+        default     => 'In Warehouse',
+    };
+}
+
