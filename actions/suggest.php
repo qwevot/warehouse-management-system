@@ -52,26 +52,6 @@ try {
             json_ok(['items' => $items]);
             break;
 
-        case 'customers':
-        case 'companies':
-            $params = [];
-            $sql = "SELECT id, name, company_code, contact_person, phone, email, address 
-                    FROM master_customers 
-                    WHERE deleted_at IS NULL";
-            if ($q !== '') {
-                $sql .= " AND (name LIKE ? OR company_code LIKE ? OR contact_person LIKE ?)";
-                $term = '%' . $q . '%';
-                $params[] = $term;
-                $params[] = $term;
-                $params[] = $term;
-            }
-            $sql .= " ORDER BY name ASC LIMIT " . $limit;
-            $st = $pdo->prepare($sql);
-            $st->execute($params);
-            $items = $st->fetchAll(PDO::FETCH_ASSOC);
-            json_ok(['items' => $items]);
-            break;
-
         case 'stock_items':
             $params = [];
             $sql = "SELECT MIN(u.id) AS id, u.master_item_id, mi.product_name AS name, mi.brand AS brand, 

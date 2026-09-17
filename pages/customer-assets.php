@@ -52,20 +52,34 @@ try {
         }
     } else {
         // Super admin / admin view:
-        // 1. Fetch authorized master companies and registered customer users
-        $masterCompanies = $pdo->query("
-            SELECT DISTINCT name 
-            FROM master_customers 
-            WHERE deleted_at IS NULL AND name IS NOT NULL AND name <> ''
-        ")->fetchAll(PDO::FETCH_COLUMN);
-
+        // 1. Fetch distinct companies from users and deployed unit locations (including in-transit destinations)
         $userCompanies = $pdo->query("
             SELECT DISTINCT company 
             FROM users 
             WHERE role = 'customer' AND company IS NOT NULL AND company <> ''
         ")->fetchAll(PDO::FETCH_COLUMN);
 
-        $allCompanies = array_values(array_unique(array_filter(array_merge($masterCompanies, $userCompanies))));
+        $locList = $pdo->query("
+            SELECT DISTINCT deployment_site 
+            FROM inventory_units 
+            WHERE deleted_at IS NULL 
+              AND deployment_site NOT IN ('In Warehouse', 'Main Office')
+        ")->fetchAll(PDO::FETCH_COLUMN);
+
+        $locCompanies = [];
+        foreach ($locList as $l) {
+            $lClean = trim((string)$l);
+            if (preg_match('/^In Transit \((.+?)(?: - [^\)]+)?\)$/i', $lClean, $m)) {
+                $locCompanies[] = trim($m[1]);
+            } else {
+                $parts = explode(' - ', $lClean, 2);
+                if (!empty($parts[0])) {
+                    $locCompanies[] = trim($parts[0]);
+                }
+            }
+        }
+
+        $allCompanies = array_values(array_unique(array_filter(array_merge($userCompanies, $locCompanies))));
         sort($allCompanies, SORT_NATURAL | SORT_FLAG_CASE);
 
         // 2. Query units: filtered by company if specified, or all customer-deployed & in-transit units

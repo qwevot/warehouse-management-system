@@ -3,7 +3,6 @@ $navSections = [
     'Master Data' => [
         ['brands', 'pages/brand.php', 'Brands', 'brands'],
         ['items', 'pages/items.php', 'Items', 'items'],
-        ['customers', 'pages/customers.php', 'Customers', 'users'],
         ['master-bin', 'pages/master-bin.php', 'Master Bin', 'bin'],
     ],
     'Inventory' => [
