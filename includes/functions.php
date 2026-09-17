@@ -824,6 +824,31 @@ function handle_master_lifecycle(string $entity, string $action, int $id, ?strin
                 redirect_to($redirectTarget ?: 'master-bin', 'added', 'Master item "' . $name . '" restored (units remained in bin).');
             }
         }
+    } elseif ($entity === 'customer') {
+        $st = $pdo->prepare('SELECT name, deleted_at FROM master_customers WHERE id = ?');
+        $st->execute([$id]);
+        $row = $st->fetch();
+        if (!$row) {
+            redirect_to($redirectTarget ?: 'master-bin', 'error', 'Customer not found.');
+        }
+        $name = $row['name'];
+
+        if ($action === 'delete') {
+            $pdo->prepare('UPDATE master_customers SET deleted_at = NOW() WHERE id = ?')->execute([$id]);
+            log_activity('master_customer.bin', 'master_customer', $id, ['name' => $name], 'success');
+            redirect_to($redirectTarget ?: 'customers', 'added', 'Customer "' . $name . '" was moved to the bin.');
+        } elseif ($action === 'permanent_delete') {
+            if ($row['deleted_at'] === null) {
+                redirect_to('master-bin', 'error', 'Only binned customers can be permanently deleted.');
+            }
+            $pdo->prepare('DELETE FROM master_customers WHERE id = ?')->execute([$id]);
+            log_activity('master_customer.permanent_delete', 'master_customer', $id, ['name' => $name], 'success');
+            redirect_to($redirectTarget ?: 'master-bin', 'added', 'Customer "' . $name . '" permanently deleted.');
+        } elseif ($action === 'restore') {
+            $pdo->prepare('UPDATE master_customers SET deleted_at = NULL WHERE id = ?')->execute([$id]);
+            log_activity('master_customer.restore', 'master_customer', $id, ['name' => $name], 'success');
+            redirect_to($redirectTarget ?: 'master-bin', 'added', 'Customer "' . $name . '" restored.');
+        }
     }
 }
 

@@ -55,12 +55,18 @@ try {
     // 5. Delete binned master brands
     $pdo->exec("DELETE FROM master_brands WHERE deleted_at IS NOT NULL");
 
+    // 6. Delete binned master customers
+    $pdo->exec("DELETE FROM master_customers WHERE deleted_at IS NOT NULL");
+
     // If tables are empty, reset AUTO_INCREMENT to 1
     if ((int)$pdo->query("SELECT COUNT(*) FROM master_items")->fetchColumn() === 0) {
         $pdo->exec("ALTER TABLE master_items AUTO_INCREMENT = 1");
     }
     if ((int)$pdo->query("SELECT COUNT(*) FROM master_brands")->fetchColumn() === 0) {
         $pdo->exec("ALTER TABLE master_brands AUTO_INCREMENT = 1");
+    }
+    if ((int)$pdo->query("SELECT COUNT(*) FROM master_customers")->fetchColumn() === 0) {
+        $pdo->exec("ALTER TABLE master_customers AUTO_INCREMENT = 1");
     }
     if ((int)$pdo->query("SELECT COUNT(*) FROM inventory_units")->fetchColumn() === 0) {
         $pdo->exec("ALTER TABLE inventory_units AUTO_INCREMENT = 1");
