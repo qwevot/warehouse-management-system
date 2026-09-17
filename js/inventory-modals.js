@@ -356,10 +356,6 @@
         combineLocation("#editLocShelf", "#editLocRow", "#editLocCol", "#edit_location");
     };
 
-    window.updateTransferLocation = function () {
-        combineLocation("#transferShelf", "#transferRow", "#transferCol", "#transferDestination");
-    };
-
     // Autocomplete Dropdowns
     function initSuggest(cfg) {
         const input = $(cfg.input);

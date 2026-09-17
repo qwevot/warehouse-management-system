@@ -1044,6 +1044,10 @@ function set_unit_custody(PDO $pdo, int|array $unitIds, string $custodyType, arr
                 $binLocation    = null;
                 $deploymentSite = 'In Warehouse';
                 $location       = $customLoc;
+            } elseif ($rawBin !== '') {
+                $binLocation    = null;
+                $deploymentSite = 'In Warehouse';
+                $location       = $rawBin;
             } else {
                 $binLocation    = null;
                 $deploymentSite = 'In Warehouse';

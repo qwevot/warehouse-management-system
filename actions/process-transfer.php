@@ -8,13 +8,26 @@ require_csrf('transfers');
 
 $pdo      = html_db('transfers');
 $itemId   = (int)($_POST['item_id'] ?? 0);
-$destination = trim($_POST['destination'] ?? '');
-$note     = trim($_POST['note'] ?? '');
+$locType  = trim((string)($_POST['transfer_loc_type'] ?? 'shelf'));
+$destination = trim((string)($_POST['destination'] ?? ''));
+$outsideLoc  = trim((string)($_POST['destination_outside'] ?? ''));
+$note     = trim((string)($_POST['note'] ?? ''));
+
+if ($locType === 'outside' && $outsideLoc !== '') {
+    $destination = $outsideLoc;
+}
 
 if ($itemId <= 0) redirect_to('transfers', 'error', 'Please select an item.');
 if ($destination === '') redirect_to('transfers', 'error', 'Please choose a destination location.');
-if (!preg_match('/^S\d{2}-R\d{2}-C\d{2}$/', $destination)) {
-    redirect_to('transfers', 'error', 'Invalid location format.');
+
+if ($locType === 'shelf') {
+    if (!preg_match('/^S\d{2}-R\d{2}-C\d{2}$/', $destination)) {
+        redirect_to('transfers', 'error', 'Invalid shelf location format (must be S01-R01-C01).');
+    }
+} else {
+    if (mb_strlen($destination) > 100) {
+        redirect_to('transfers', 'error', 'Destination location cannot exceed 100 characters.');
+    }
 }
 
 try {

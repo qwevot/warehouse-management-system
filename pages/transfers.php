@@ -39,7 +39,7 @@ include __DIR__ . '/../includes/header.php';
     </div>
 
     <?php if (user_can('movement.manage')): ?>
-    <form method="POST" action="<?php echo BASE_URL; ?>/actions/process-transfer.php" class="wizard-body" id="transferForm">
+    <form method="POST" action="<?php echo BASE_URL; ?>/actions/process-transfer.php" class="wizard-body" id="transferForm" onsubmit="updateTransferLocation()">
         <?php echo csrf_field(); ?>
         <input type="hidden" name="unit_id" id="transferUnitId" value="">
 
@@ -90,7 +90,7 @@ include __DIR__ . '/../includes/header.php';
             <!-- Outside Shelf Free-Text Destination -->
             <div id="transferOutsideGroup" class="field full" style="display:none;">
                 <label for="transferDestinationOutside">Destination Location *</label>
-                <input type="text" id="transferDestinationOutside" placeholder="e.g. Ruang A, Staging Area" maxlength="100" oninput="updateTransferLocation()">
+                <input type="text" id="transferDestinationOutside" name="destination_outside" placeholder="e.g. Ruang A, Staging Area" maxlength="100" oninput="updateTransferLocation()">
             </div>
                         
         </div>
@@ -168,6 +168,8 @@ include __DIR__ . '/../includes/header.php';
         if (type === "outside") {
             shelfGrp.style.display = "none";
             outGrp.style.display = "block";
+            const outInput = document.getElementById("transferDestinationOutside");
+            if (outInput) outInput.focus();
         } else {
             shelfGrp.style.display = "block";
             outGrp.style.display = "none";
@@ -184,12 +186,29 @@ include __DIR__ . '/../includes/header.php';
             const outVal = (document.getElementById("transferDestinationOutside")?.value || "").trim();
             hidden.value = outVal;
         } else {
-            const s = (document.getElementById("transferShelf")?.value || "").trim();
-            const r = (document.getElementById("transferRow")?.value || "").trim();
-            const c = (document.getElementById("transferCol")?.value || "").trim();
-            hidden.value = (s && r && c) ? `${s}-${r}-${c}` : "";
+            const sEl = document.getElementById("transferShelf");
+            const rEl = document.getElementById("transferRow");
+            const cEl = document.getElementById("transferCol");
+            const s = sEl ? sEl.value.trim() : "";
+            const r = rEl ? rEl.value.trim() : "";
+            const c = cEl ? cEl.value.trim() : "";
+            if (s && r && c) {
+                const pad = (v) => v.replace(/\D/g, "").padStart(2, "0");
+                hidden.value = "S" + pad(s) + "-R" + pad(r) + "-C" + pad(c);
+            } else {
+                hidden.value = "";
+            }
         }
     };
+
+    document.addEventListener("DOMContentLoaded", function () {
+        const form = document.getElementById("transferForm");
+        if (form) {
+            form.addEventListener("submit", function () {
+                window.updateTransferLocation();
+            });
+        }
+    });
 </script>
 
 <?php include __DIR__ . '/../includes/footer.php'; ?>
