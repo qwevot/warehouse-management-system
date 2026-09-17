@@ -36,7 +36,7 @@ try {
                   AND (u.bin_note = CONCAT('Cascaded from customer bin: ', c.name) 
                        OR u.deployment_site LIKE CONCAT(c.name, ' - %') OR u.deployment_site = c.name 
                        OR u.location LIKE CONCAT(c.name, ' - %') OR u.location = c.name 
-                       OR u.deployment_site LIKE CONCAT('In Transit (', c.name, '%')))) AS binned_units
+                       OR u.deployment_site LIKE CONCAT('In Transit (', c.name, '%')) ) AS binned_units
         FROM master_customers c 
         WHERE c.deleted_at IS NOT NULL 
         ORDER BY c.deleted_at DESC
