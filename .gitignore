@@ -1,3 +1,6 @@
 # Uploaded item photos (user data) — never commit these.
 uploads/*
 !uploads/.htaccess
+
+# Local context & scratch notes
+context.md
