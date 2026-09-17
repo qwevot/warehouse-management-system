@@ -3,6 +3,7 @@
 require_once __DIR__ . '/../includes/auth.php';
 require_login();
 require_role('super admin');
+require_csrf('users');
 
 $pdo = html_db('users');
 
@@ -46,6 +47,13 @@ if ($id > 0) {
         $pdo->prepare('UPDATE users SET username = ?, full_name = ?, role = ?, company = ? WHERE id = ?')
             ->execute([$username, $fullName, $role, $company, $id]);
     }
+    log_activity('user.edit', 'user', $id, [
+        'username' => $username,
+        'full_name' => $fullName,
+        'role' => $role,
+        'company' => $company,
+        'password_changed' => ($password !== '')
+    ]);
     redirect_to('users', 'added', 'User "' . $username . '" updated.');
 }
 
@@ -55,5 +63,13 @@ if ($password === '') {
 
 $pdo->prepare('INSERT INTO users (username, full_name, role, company, password_hash) VALUES (?, ?, ?, ?, ?)')
     ->execute([$username, $fullName, $role, $company, password_hash($password, PASSWORD_DEFAULT)]);
+$newUserId = (int)$pdo->lastInsertId();
+
+log_activity('user.create', 'user', $newUserId, [
+    'username' => $username,
+    'full_name' => $fullName,
+    'role' => $role,
+    'company' => $company
+]);
 
 redirect_to('users', 'added', 'User "' . $username . '" added.');

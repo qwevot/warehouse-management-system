@@ -21,6 +21,7 @@ $isCustomer = ($currRole === 'customer');
         </div>
 
         <form id="checkInForm" onsubmit="handleCheckInSubmit(event)">
+            <?php echo csrf_field(); ?>
             <div class="modal-body" style="display:flex; flex-direction:column; gap:16px;">
 
                 <!-- Specimen Info Card -->
@@ -60,7 +61,7 @@ $isCustomer = ($currRole === 'customer');
                 <?php else: ?>
                     <!-- Internal Staff View: Warehouse / Main Office / Customer -->
                     <div class="field">
-                        <label>Check In Destination *</label>
+                        <span class="field-label" style="display:block; margin-bottom:6px; font-weight:600; font-size:13px; color:var(--text);">Check In Destination *</span>
                         <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-top:4px;">
                             <label style="display:flex; align-items:center; gap:6px; padding:10px 12px; border:1.5px solid var(--border-color, #e5e7eb); border-radius:8px; cursor:pointer; font-size:13px; font-weight:500;" class="dest-radio-label">
                                 <input type="radio" name="destination_type" value="warehouse" checked onchange="onDestTypeChange(this.value)">
@@ -79,8 +80,23 @@ $isCustomer = ($currRole === 'customer');
 
                     <!-- Warehouse Sub-field -->
                     <div id="ciDestWarehouseGroup" class="field">
-                        <label for="ciBinLocation">Bin / Shelf Location</label>
-                        <input type="text" id="ciBinLocation" name="bin_location" placeholder="e.g. S01-R01-C01 or In Warehouse" maxlength="100">
+                        <span class="field-label">Shelf Location *</span>
+                        <div class="location-picker" style="justify-content:flex-start; gap:12px;">
+                            <div class="loc-input">
+                                <label for="ciShelf">Shelf (S)</label>
+                                <input type="text" id="ciShelf" maxlength="2" inputmode="numeric" placeholder="01" oninput="onlyDigits(this); updateCheckInLocation();" style="width:72px; text-align:center; font-family:'Consolas','Menlo',monospace;">
+                            </div>
+                            <div class="loc-input">
+                                <label for="ciRow">Row (R)</label>
+                                <input type="text" id="ciRow" maxlength="2" inputmode="numeric" placeholder="01" oninput="onlyDigits(this); updateCheckInLocation();" style="width:72px; text-align:center; font-family:'Consolas','Menlo',monospace;">
+                            </div>
+                            <div class="loc-input">
+                                <label for="ciCol">Column (C)</label>
+                                <input type="text" id="ciCol" maxlength="2" inputmode="numeric" placeholder="01" oninput="onlyDigits(this); updateCheckInLocation();" style="width:72px; text-align:center; font-family:'Consolas','Menlo',monospace;">
+                            </div>
+                        </div>
+                        <input type="hidden" id="ciBinLocation" name="bin_location">
+                        <small style="color:var(--muted); font-size:11.5px; margin-top:4px;">Format: S01-R01-C01 (all 3 fields are required)</small>
                     </div>
 
                     <!-- Office Sub-field -->
@@ -127,6 +143,19 @@ $isCustomer = ($currRole === 'customer');
     const isCustomer = <?php echo json_encode($isCustomer); ?>;
     const userCompany = <?php echo json_encode($currComp); ?>;
 
+    window.updateCheckInLocation = function () {
+        const s = document.getElementById("ciShelf")?.value.trim() || "";
+        const r = document.getElementById("ciRow")?.value.trim() || "";
+        const c = document.getElementById("ciCol")?.value.trim() || "";
+        const target = document.getElementById("ciBinLocation");
+        if (!target) return;
+        if (s && r && c) {
+            target.value = "S" + s.padStart(2, "0") + "-R" + r.padStart(2, "0") + "-C" + c.padStart(2, "0");
+        } else {
+            target.value = "";
+        }
+    };
+
     window.openCheckInModal = function (item) {
         if (!item) return;
 
@@ -159,16 +188,23 @@ $isCustomer = ($currRole === 'customer');
             const radio = document.querySelector('input[name="destination_type"][value="warehouse"]');
             if (radio) { radio.checked = true; }
             onDestTypeChange("warehouse");
-            const binInput = document.getElementById("ciBinLocation");
-            if (binInput) {
-                const prevLoc = (item.location || "").trim();
-                // If it was at customer site or main office, reset cleanly to 'In Warehouse'
-                if (prevLoc && prevLoc !== "Main Office" && !prevLoc.includes(" - ")) {
-                    binInput.value = prevLoc;
-                } else {
-                    binInput.value = "In Warehouse";
-                }
+
+            const sInput = document.getElementById("ciShelf");
+            const rInput = document.getElementById("ciRow");
+            const cInput = document.getElementById("ciCol");
+            if (sInput) sInput.value = "";
+            if (rInput) rInput.value = "";
+            if (cInput) cInput.value = "";
+
+            const prevLoc = (item.location || "").trim();
+            const match = prevLoc.match(/^S(\d{1,2})-R(\d{1,2})-C(\d{1,2})$/i);
+            if (match) {
+                if (sInput) sInput.value = match[1];
+                if (rInput) rInput.value = match[2];
+                if (cInput) cInput.value = match[3];
             }
+            updateCheckInLocation();
+
             const compInput = document.getElementById("ciStaffCompany");
             if (compInput) compInput.value = "";
             const staffSite = document.getElementById("ciStaffSite");
@@ -181,7 +217,7 @@ $isCustomer = ($currRole === 'customer');
             if (isCustomer) {
                 document.getElementById("ciCustSiteInput")?.focus();
             } else {
-                document.getElementById("ciBinLocation")?.focus();
+                document.getElementById("ciShelf")?.focus();
             }
         }, 150);
     };
@@ -233,6 +269,25 @@ $isCustomer = ($currRole === 'customer');
         const submitBtn = document.getElementById("ciSubmitBtn");
         if (errEl) errEl.style.display = "none";
 
+        // Validate warehouse shelf location
+        const destType = document.querySelector('input[name="destination_type"]:checked')?.value || "";
+        if (destType === "warehouse") {
+            const s = document.getElementById("ciShelf")?.value.trim() || "";
+            const r = document.getElementById("ciRow")?.value.trim() || "";
+            const c = document.getElementById("ciCol")?.value.trim() || "";
+            if (!s || !r || !c) {
+                if (errEl) {
+                    errEl.textContent = "Please fill out Shelf (S), Row (R), and Column (C) location.";
+                    errEl.style.display = "block";
+                }
+                if (!s) document.getElementById("ciShelf")?.focus();
+                else if (!r) document.getElementById("ciRow")?.focus();
+                else document.getElementById("ciCol")?.focus();
+                return;
+            }
+            updateCheckInLocation();
+        }
+
         const form = document.getElementById("checkInForm");
         const formData = new FormData(form);
 
@@ -270,6 +325,21 @@ $isCustomer = ($currRole === 'customer');
                 errEl.textContent = "A network error occurred. Please try again.";
                 errEl.style.display = "block";
             }
+            try {
+                fetch("<?php echo BASE_URL; ?>/actions/log-client-error.php", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        action: "client.checkin_network_error",
+                        error: String(err && err.message ? err.message : err),
+                        url: "<?php echo BASE_URL; ?>/actions/process-checkin.php",
+                        context: {
+                            destination_type: destType,
+                            site: siteVal
+                        }
+                    })
+                });
+            } catch (ignore) {}
         } finally {
             if (submitBtn) {
                 submitBtn.disabled = false;

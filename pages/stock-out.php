@@ -3,38 +3,45 @@ $pageTitle = 'Stock Out';
 $activeNav = 'stock-out';
 
 require_once __DIR__ . '/../includes/auth.php';
-require_login();
+require_once __DIR__ . '/../includes/inventory-data.php';
+require_staff();
+
+$mode   = 'stock-out';
+$state  = inventory_state_from_request();
+$rows   = [];
+$total  = 0;
+$facets = ['brand' => [], 'shelf' => [], 'row' => [], 'col' => []];
+$items  = [];
+$availableUnits = [];
+$dbError = '';
 
 try {
     $pdo = db();
+    $result = inventory_fetch($pdo, $mode, $state, false);
+    $rows  = $result['rows'];
+    $total = $result['total'];
+    $state['page'] = $result['page'];
+    $state['size'] = $result['size'];
+    $facets = inventory_facets($pdo, $mode);
 
-    // Fetch active warehouse lots for whole lot outbound (in warehouse & quantity > 0)
-    $items = $pdo->query("
-        SELECT id, name, brand, serial, quantity, location, bin_location, deployment_site, barcode, qr, status, photo, created_at
-        FROM inventory_list
-        WHERE deleted_at IS NULL
-          AND quantity > 0
-          AND status = 'available'
-          AND deployment_site = 'In Warehouse'
-        ORDER BY name ASC
-    ")->fetchAll();
-
-    // Fetch active available units physically in warehouse for manual SN dropdown & search
-    $availableUnits = $pdo->query("
-        SELECT u.id AS unit_id, u.inventory_id, u.serial, u.status, u.bin_location, u.deployment_site,
-               COALESCE(NULLIF(u.bin_location, ''), NULLIF(u.location, ''), i.location, '') AS location,
-               i.name, i.brand, i.barcode, i.photo
-        FROM inventory_units u
-        JOIN inventory_list i ON i.id = u.inventory_id
-        WHERE u.deleted_at IS NULL 
-          AND i.deleted_at IS NULL 
-          AND u.status = 'available'
-          AND u.deployment_site = 'In Warehouse'
-        ORDER BY u.serial ASC
-    ")->fetchAll();
+    // Fetch registered and deployed customer company names for autocompletion
+    $customerList = $pdo->query("
+        SELECT DISTINCT company 
+        FROM users 
+        WHERE role = 'customer' AND company IS NOT NULL AND company <> ''
+        UNION
+        SELECT DISTINCT SUBSTRING_INDEX(deployment_site, ' - ', 1) AS company
+        FROM inventory_units
+        WHERE deployment_site LIKE '% - %'
+        UNION
+        SELECT DISTINCT company
+        FROM users
+        WHERE company IS NOT NULL AND company <> ''
+        ORDER BY company ASC
+    ")->fetchAll(PDO::FETCH_COLUMN);
 } catch (Exception $e) {
-    $items = [];
-    $availableUnits = [];
+    $rows = [];
+    $customerList = [];
     $dbError = 'Could not load data from the database.';
 }
 
@@ -51,8 +58,9 @@ include __DIR__ . '/../includes/header.php';
 
     <?php if (user_can('movement.manage')): ?>
     <form method="POST" action="<?php echo BASE_URL; ?>/actions/process-stock-out.php" class="wizard-body" id="stockForm">
+        <?php echo csrf_field(); ?>
 
-        <input type="hidden" name="outbound_mode" id="outboundModeInput" value="whole_lot">
+        <input type="hidden" name="outbound_mode" id="outboundModeInput" value="individual">
         <input type="hidden" name="item_id" id="stockItemId">
         <input type="hidden" name="unit_id" id="stockUnitId">
 
@@ -89,8 +97,8 @@ include __DIR__ . '/../includes/header.php';
                             <div style="font-size:11.5px; color:var(--muted, #64748b);">Check off specific units to dispatch, or select all for full lot outbound.</div>
                         </div>
                         <div style="display:flex; gap:8px;">
-                            <button type="button" class="btn sm secondary" onclick="toggleAllUnits(true)" style="padding:4px 10px; font-size:11px;">Select All</button>
-                            <button type="button" class="btn sm secondary" onclick="toggleAllUnits(false)" style="padding:4px 10px; font-size:11px;">Clear All</button>
+                            <button type="button" class="btn sm primary" onclick="toggleAllUnits(true)" style="padding:4px 10px; font-size:11px;">Select All</button>
+                            <button type="button" class="btn sm primary" onclick="toggleAllUnits(false)" style="padding:4px 10px; font-size:11px;">Clear All</button>
                         </div>
                     </div>
                     <div id="unitChecklist" style="max-height:200px; overflow-y:auto; display:grid; grid-template-columns:repeat(auto-fill, minmax(210px, 1fr)); gap:8px; padding:4px;"></div>
@@ -100,12 +108,45 @@ include __DIR__ . '/../includes/header.php';
             <div class="field" id="quantityField">
                 <label for="quantity">Quantity to issue *</label>
                 <input type="number" id="quantity" name="quantity" min="1" value="1" readonly style="background:var(--bg, #f8fafc); cursor:not-allowed;" required>
-                <small id="qtyHintText" style="color:var(--muted); font-size:11.5px; margin-top:4px; display:block;">Whole lot outbound automatically dispatches all on-hand units in the batch.</small>
+                <small id="qtyHintText" style="color:var(--muted); font-size:11.5px; margin-top:4px; display:block;">Select one or more serialized units to dispatch.</small>
             </div>
 
-            <div class="field">
-                <label for="issued_to">Issued To *</label>
-                <input type="text" id="issued_to" name="issued_to" placeholder="Who is this stock being issued to?" required>
+            <!-- Issued To Destination Selector -->
+            <div class="field" style="display:flex; flex-direction:column; justify-content:flex-start;">
+                <span class="field-label" style="display:block; margin-bottom:6px; font-weight:600; font-size:13px; color:var(--text);">Issued To *</span>
+                <div style="display:flex; gap:10px; margin-top:4px; flex-wrap:wrap;">
+                    <label style="display:flex; align-items:center; gap:8px; padding:8px 14px; border:1px solid var(--border); border-radius:var(--radius-sm); cursor:pointer; font-size:13px; font-weight:600; background:#ffffff;">
+                        <input type="radio" name="issued_to_type" value="office" checked onchange="toggleIssuedToType(this.value)" style="width:auto; height:auto; accent-color:var(--blue);">
+                        <span>Main Office</span>
+                    </label>
+                    <label style="display:flex; align-items:center; gap:8px; padding:8px 14px; border:1px solid var(--border); border-radius:var(--radius-sm); cursor:pointer; font-size:13px; font-weight:600; background:#ffffff;">
+                        <input type="radio" name="issued_to_type" value="customer" onchange="toggleIssuedToType(this.value)" style="width:auto; height:auto; accent-color:var(--blue);">
+                        <span>Customer</span>
+                    </label>
+                </div>
+                <input type="hidden" name="issued_to" id="finalIssuedToInput" value="Main Office">
+            </div>
+
+            <!-- Dynamic Customer & Site Inputs (Visible when Customer radio is selected) -->
+            <div id="customerIssuedToFields" class="field full" style="display:none;">
+                <div class="form-grid" style="grid-template-columns:1fr 1fr; gap:16px;">
+                    <div class="field" style="position:relative; margin-bottom:0;">
+                        <label for="customer_name">Customer / Company *</label>
+                        <div class="suggest-wrap" style="position:relative;">
+                            <input type="text" id="customer_name" name="customer_name" placeholder="Type or select customer company..." autocomplete="off" oninput="onCustomerInput(this.value)" onfocus="onCustomerInput(this.value)">
+                            <div class="suggest-box" id="customerSuggestBox"></div>
+                        </div>
+                    </div>
+
+                    <div class="field" style="margin-bottom:0;">
+                        <label for="customer_site">Site (Optional)</label>
+                        <input type="text" id="customer_site" name="customer_site" placeholder="e.g. Jakarta DC 1, Floor 3" maxlength="100" oninput="updateTargetCustodyPreview()">
+                    </div>
+                </div>
+
+                <div style="background:var(--blue-soft); border:1px solid var(--blue-line); border-radius:var(--radius-sm); padding:8px 12px; font-size:12px; color:var(--blue-dark); margin-top:10px;">
+                    <strong>Target Custody:</strong> <span id="targetCustodyPreviewText"><em>(Select or enter customer company)</em></span>
+                </div>
             </div>
 
             <div class="field full">
@@ -121,7 +162,7 @@ include __DIR__ . '/../includes/header.php';
 
     </form>
     <?php else: ?>
-        <p style="color:var(--muted);">You have view-only access. Stock movements require a technician account or higher.</p>
+        <p style="color:var(--muted);">You have view-only access.</p>
     <?php endif; ?>
 
 </section>
@@ -129,8 +170,8 @@ include __DIR__ . '/../includes/header.php';
 <section class="inventory-section" id="inventory" style="margin-top:20px;">
 
     <?php
-    $autofillTitle = 'Autofill the stock-out form with this item';
-    include __DIR__ . '/../includes/movement-item-list.php';
+    $emptyMessage = 'No items registered yet.';
+    include __DIR__ . '/../includes/inventory-table.php';
     ?>
 
 </section>
@@ -140,22 +181,9 @@ include __DIR__ . '/../includes/header.php';
 <?php include __DIR__ . '/../includes/print-lot-modal.php'; ?>
 
 <script>
-    <?php include __DIR__ . '/../includes/stock-items-data.php'; ?>
-
-    window.AVAILABLE_UNITS = <?php echo json_encode(array_map(function ($u) {
-        return [
-            'unit_id'      => (int)$u['unit_id'],
-            'inventory_id' => (int)$u['inventory_id'],
-            'serial'       => $u['serial'],
-            'name'         => $u['name'],
-            'brand'        => $u['brand'] ?? '',
-            'location'     => $u['location'] ?? '',
-            'barcode'      => $u['barcode'] ?? '',
-            'photo'        => $u['photo'] ? BASE_URL . '/' . $u['photo'] : '',
-            'status'       => $u['status'],
-        ];
-    }, $availableUnits)); ?>;
-
+    window.escapeHtml = function (str) {
+        return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    };
 
     // Load serialized units for a selected lot
     window.loadLotUnits = function(lotId) {
@@ -324,81 +352,93 @@ include __DIR__ . '/../includes/header.php';
         const box = document.getElementById("unifiedSuggestBox");
         if (!input || !box) return;
 
+        let debounceTimer = null;
+        let activeAbort = null;
+
         function renderSuggestions(val) {
-            val = (val || "").trim().toLowerCase();
+            val = (val || "").trim();
             if (!val) {
                 box.style.display = "none";
                 box.innerHTML = "";
                 return;
             }
 
-            // Filter active units only
-            const matchedUnits = (window.AVAILABLE_UNITS || []).filter(u =>
-                u.status === 'available' &&
-                (u.serial.toLowerCase().includes(val) || u.name.toLowerCase().includes(val) || (u.barcode && u.barcode.toLowerCase().includes(val)))
-            ).slice(0, 8);
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                if (activeAbort) activeAbort.abort();
+                activeAbort = new AbortController();
 
-            // Filter active lots only
-            const matchedLots = (window.STOCK_ITEMS || []).filter(i =>
-                i.status === 'available' &&
-                (i.name.toLowerCase().includes(val) || (i.barcode && i.barcode.toLowerCase().includes(val)) || (i.brand && i.brand.toLowerCase().includes(val)))
-            ).slice(0, 6);
+                fetch("<?php echo BASE_URL; ?>/actions/suggest.php?type=unified_outbound&q=" + encodeURIComponent(val), {
+                    signal: activeAbort.signal
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (!data.ok) return;
+                    const matchedUnits = data.units || [];
+                    const matchedLots = data.lots || [];
 
-            if (matchedUnits.length === 0 && matchedLots.length === 0) {
-                box.innerHTML = '<div style="padding:10px 14px; font-size:12px; color:var(--muted);">No active available units or lots found.</div>';
-                box.style.display = "block";
-                return;
-            }
-
-            let html = "";
-            if (matchedUnits.length > 0) {
-                html += '<div style="padding:6px 12px; font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; background:var(--bg, #f8fafc); border-bottom:1px solid var(--border-color, #e2e8f0);">Serial Numbers (Individual Unit)</div>';
-                matchedUnits.forEach(u => {
-                    html += `
-                        <div class="suggest-item" data-type="unit" data-id="${u.unit_id}" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid var(--border-color, #e2e8f0); display:flex; justify-content:space-between; align-items:center;">
-                            <div>
-                                <span style="font-weight:700; color:var(--primary, #4f46e5); font-size:13px;">${escapeHtml(u.serial)}</span>
-                                <span style="font-size:12px; color:var(--text, #334155); margin-left:6px;">${escapeHtml(u.name)}</span>
-                            </div>
-                            <span style="font-size:11px; color:var(--muted);">${escapeHtml(u.location || '')}</span>
-                        </div>
-                    `;
-                });
-            }
-
-            if (matchedLots.length > 0) {
-                html += '<div style="padding:6px 12px; font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; background:var(--bg, #f8fafc); border-bottom:1px solid var(--border-color, #e2e8f0);">Lots / Batches (Select Units)</div>';
-                matchedLots.forEach(l => {
-                    html += `
-                        <div class="suggest-item" data-type="lot" data-id="${l.id}" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid var(--border-color, #e2e8f0); display:flex; justify-content:space-between; align-items:center;">
-                            <div>
-                                <span style="font-weight:600; color:var(--text, #1e293b); font-size:13px;">${escapeHtml(l.name)}</span>
-                                ${l.brand ? `<span style="font-size:11.5px; color:var(--muted);"> (${escapeHtml(l.brand)})</span>` : ''}
-                                ${l.barcode ? `<div style="font-size:11px; color:var(--muted);">Barcode: ${escapeHtml(l.barcode)}</div>` : ''}
-                            </div>
-                            <span style="font-size:12px; font-weight:600; color:var(--text);">${l.quantity} in stock</span>
-                        </div>
-                    `;
-                });
-            }
-
-            box.innerHTML = html;
-            box.style.display = "block";
-
-            box.querySelectorAll(".suggest-item").forEach(itemEl => {
-                itemEl.addEventListener("click", () => {
-                    const type = itemEl.getAttribute("data-type");
-                    const id = parseInt(itemEl.getAttribute("data-id"), 10);
-                    if (type === "unit") {
-                        const target = (window.AVAILABLE_UNITS || []).find(u => u.unit_id === id);
-                        if (target) window.selectUnitForStockOut(target);
-                    } else {
-                        const target = (window.STOCK_ITEMS || []).find(l => l.id === id);
-                        if (target) window.selectLotForStockOut(target);
+                    if (matchedUnits.length === 0 && matchedLots.length === 0) {
+                        box.innerHTML = '<div style="padding:10px 14px; font-size:12px; color:var(--muted);">No active available units or lots found.</div>';
+                        box.style.display = "block";
+                        return;
                     }
-                    box.style.display = "none";
+
+                    let html = "";
+                    if (matchedUnits.length > 0) {
+                        html += '<div style="padding:6px 12px; font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; background:var(--bg, #f8fafc); border-bottom:1px solid var(--border-color, #e2e8f0);">Serial Numbers (Individual Unit)</div>';
+                        matchedUnits.forEach(u => {
+                            html += `
+                                <div class="suggest-item" data-type="unit" data-id="${u.unit_id}" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid var(--border-color, #e2e8f0); display:flex; justify-content:space-between; align-items:center;">
+                                    <div>
+                                        <span style="font-weight:700; color:var(--primary, #4f46e5); font-size:13px;">${escapeHtml(u.serial)}</span>
+                                        <span style="font-size:12px; color:var(--text, #334155); margin-left:6px;">${escapeHtml(u.name)}</span>
+                                    </div>
+                                    <span style="font-size:11px; color:var(--muted);">${escapeHtml(u.location || '')}</span>
+                                </div>
+                            `;
+                        });
+                    }
+
+                    if (matchedLots.length > 0) {
+                        html += '<div style="padding:6px 12px; font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; background:var(--bg, #f8fafc); border-bottom:1px solid var(--border-color, #e2e8f0);">Lots / Batches (Select Units)</div>';
+                        matchedLots.forEach(l => {
+                            html += `
+                                <div class="suggest-item" data-type="lot" data-id="${l.id}" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid var(--border-color, #e2e8f0); display:flex; justify-content:space-between; align-items:center;">
+                                    <div>
+                                        <span style="font-weight:600; color:var(--text, #1e293b); font-size:13px;">${escapeHtml(l.name)}</span>
+                                        ${l.brand ? `<span style="font-size:11.5px; color:var(--muted);"> (${escapeHtml(l.brand)})</span>` : ''}
+                                        ${l.barcode ? `<div style="font-size:11px; color:var(--muted);">Barcode: ${escapeHtml(l.barcode)}</div>` : ''}
+                                    </div>
+                                    <span style="font-size:12px; font-weight:600; color:var(--text);">${l.quantity} in stock</span>
+                                </div>
+                            `;
+                        });
+                    }
+
+                    box.innerHTML = html;
+                    box.style.display = "block";
+
+                    box.querySelectorAll(".suggest-item").forEach(itemEl => {
+                        itemEl.addEventListener("click", () => {
+                            const type = itemEl.getAttribute("data-type");
+                            const id = parseInt(itemEl.getAttribute("data-id"), 10);
+                            if (type === "unit") {
+                                const target = matchedUnits.find(u => u.unit_id === id);
+                                if (target) window.selectUnitForStockOut(target);
+                            } else {
+                                const target = matchedLots.find(l => l.id === id);
+                                if (target) window.selectLotForStockOut(target);
+                            }
+                            box.style.display = "none";
+                        });
+                    });
+                })
+                .catch(err => {
+                    if (err.name !== 'AbortError') {
+                        box.style.display = "none";
+                    }
                 });
-            });
+            }, 180);
         }
 
         function escapeHtml(str) {
@@ -410,24 +450,26 @@ include __DIR__ . '/../includes/header.php';
 
         // Exact match check on Enter or change (e.g. physical scanner emulation)
         function checkDirectScan(val) {
-            val = (val || "").trim().toLowerCase();
+            val = (val || "").trim();
             if (!val) return;
 
-            // Check if exact SN match
-            const exactUnit = (window.AVAILABLE_UNITS || []).find(u => u.serial && u.serial.toLowerCase() === val);
-            if (exactUnit) {
-                window.selectUnitForStockOut(exactUnit);
-                box.style.display = "none";
-                return;
-            }
-
-            // Check if exact Lot Barcode match
-            const exactLot = (window.STOCK_ITEMS || []).find(l => l.barcode && l.barcode.toLowerCase() === val);
-            if (exactLot) {
-                window.selectLotForStockOut(exactLot);
-                box.style.display = "none";
-                return;
-            }
+            fetch("<?php echo BASE_URL; ?>/actions/suggest.php?type=unified_outbound&q=" + encodeURIComponent(val))
+                .then(res => res.json())
+                .then(data => {
+                    if (!data.ok) return;
+                    const exactUnit = (data.units || []).find(u => u.serial && u.serial.toLowerCase() === val.toLowerCase());
+                    if (exactUnit) {
+                        window.selectUnitForStockOut(exactUnit);
+                        box.style.display = "none";
+                        return;
+                    }
+                    const exactLot = (data.lots || []).find(l => l.barcode && l.barcode.toLowerCase() === val.toLowerCase());
+                    if (exactLot) {
+                        window.selectLotForStockOut(exactLot);
+                        box.style.display = "none";
+                    }
+                })
+                .catch(() => {});
         }
 
         input.addEventListener("keydown", (e) => {
@@ -473,18 +515,126 @@ include __DIR__ . '/../includes/header.php';
         return true;
     });
 
-    // The "Outbound" row button in movement-item-list fills the form
+    // The "Outbound" row button in the items table fills the form
     window.pickStockItem = function (id) {
-        const it = (window.STOCK_ITEMS || []).find((i) => i.id === id);
-        if (!it) return;
-        if (it.status !== "available") {
-            window.showFlash("Cannot issue this item: inactive / out of the warehouse.", "error");
-            return;
-        }
-        window.selectLotForStockOut(it);
-        const form = document.getElementById("stockForm");
-        if (form) form.scrollIntoView({ behavior: "smooth" });
+        fetch("<?php echo BASE_URL; ?>/actions/suggest.php?type=get_item&id=" + encodeURIComponent(id))
+            .then(res => res.json())
+            .then(data => {
+                if (!data.ok || !data.item) {
+                    window.showFlash("Could not retrieve item details.", "error");
+                    return;
+                }
+                const it = data.item;
+                if (it.status !== "available") {
+                    window.showFlash("Cannot issue this item: inactive / out of the warehouse.", "error");
+                    return;
+                }
+                window.selectLotForStockOut(it);
+                const form = document.getElementById("stockForm");
+                if (form) form.scrollIntoView({ behavior: "smooth" });
+            })
+            .catch(() => {
+                window.showFlash("Error retrieving item details.", "error");
+            });
     };
+
+    // Customer Issued To Radio & Suggestion Logic
+    (function () {
+        const customerList = <?php echo json_encode(array_values(array_filter(array_unique($customerList)))); ?>;
+
+        window.toggleIssuedToType = function (type) {
+            const custFields = document.getElementById("customerIssuedToFields");
+            const custInput = document.getElementById("customer_name");
+            const finalInput = document.getElementById("finalIssuedToInput");
+
+            if (type === "customer") {
+                if (custFields) custFields.style.display = "block";
+                if (custInput) {
+                    custInput.required = true;
+                    custInput.focus();
+                }
+                updateTargetCustodyPreview();
+            } else {
+                if (custFields) custFields.style.display = "none";
+                if (custInput) custInput.required = false;
+                if (finalInput) finalInput.value = "Main Office";
+            }
+        };
+
+        window.onCustomerInput = function (val) {
+            const box = document.getElementById("customerSuggestBox");
+            if (!box) return;
+
+            const query = (val || "").trim().toLowerCase();
+            const matches = customerList.filter(c => c && c.toLowerCase().includes(query));
+
+            if (matches.length === 0) {
+                box.style.display = "none";
+                box.innerHTML = "";
+                updateTargetCustodyPreview();
+                return;
+            }
+
+            box.innerHTML = "";
+            matches.slice(0, 8).forEach(c => {
+                const item = document.createElement("div");
+                item.className = "suggest-item";
+                item.style.cursor = "pointer";
+                item.innerHTML = '<div class="suggest-label">' + escapeHtml(c) + '</div>';
+                item.onmousedown = function (e) {
+                    e.preventDefault();
+                    selectCustomer(c);
+                };
+                box.appendChild(item);
+            });
+            box.style.display = "block";
+            updateTargetCustodyPreview();
+        };
+
+        window.selectCustomer = function (name) {
+            const input = document.getElementById("customer_name");
+            const box = document.getElementById("customerSuggestBox");
+            if (input) input.value = name;
+            if (box) {
+                box.style.display = "none";
+                box.innerHTML = "";
+            }
+            updateTargetCustodyPreview();
+            document.getElementById("customer_site")?.focus();
+        };
+
+        window.updateTargetCustodyPreview = function () {
+            const type = document.querySelector('input[name="issued_to_type"]:checked')?.value || "office";
+            const finalInput = document.getElementById("finalIssuedToInput");
+            const previewSpan = document.getElementById("targetCustodyPreviewText");
+
+            if (type === "office") {
+                if (finalInput) finalInput.value = "Main Office";
+                return;
+            }
+
+            const comp = document.getElementById("customer_name")?.value.trim() || "";
+            const site = document.getElementById("customer_site")?.value.trim() || "";
+
+            if (!comp) {
+                if (previewSpan) previewSpan.innerHTML = '<em>(Select or enter customer company)</em>';
+                if (finalInput) finalInput.value = "";
+                return;
+            }
+
+            const fullVal = site ? (comp + " - " + site) : comp;
+            if (previewSpan) previewSpan.textContent = fullVal;
+            if (finalInput) finalInput.value = fullVal;
+        };
+
+        document.addEventListener("click", function (e) {
+            const box = document.getElementById("customerSuggestBox");
+            const input = document.getElementById("customer_name");
+            if (box && input && !box.contains(e.target) && e.target !== input) {
+                box.style.display = "none";
+            }
+        });
+    })();
 </script>
 
 <?php include __DIR__ . '/../includes/footer.php'; ?>

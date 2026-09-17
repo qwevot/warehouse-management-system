@@ -25,7 +25,7 @@ function buildPagination($prefix, $options = []) {
     <button type="button" class="pg-btn" id="<?= $prevId ?>" title="Previous">‹</button>
     <div class="pg-numbers" id="<?= $numsId ?>"></div>
     <span class="page-range" id="<?= $rangeId ?>"></span>
-    <?php if (!empty($options['deletePermanentlyAction']) && current_role() === 'super admin'): ?>
+    <?php if (!empty($options['deletePermanentlyAction']) && (current_role() === 'super admin' || user_can('permanent_delete'))): ?>
         <a href="javascript:void(0)" onclick="<?= htmlspecialchars($options['deletePermanentlyAction']) ?>" class="delete-all-permanently-link" style="color:var(--red, #dc2626); font-size:10px; text-decoration:underline; font-weight:600; margin-left:10px; text-transform:uppercase; letter-spacing:0.3px; cursor:pointer;">Delete All Permanently</a>
     <?php endif; ?>
 </div>

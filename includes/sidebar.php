@@ -32,10 +32,13 @@ if ($role === 'customer') {
         ['customer-assets', 'pages/customer-assets.php', 'Customer Equipment', 'units'],
     ];
 
-    if ($role === 'super admin') {
-        $navSections['Administration'] = [
-            ['users', 'pages/users.php', 'Users', 'users'],
-        ];
+    if ($role === 'super admin' || $role === 'admin') {
+        $adminItems = [];
+        if ($role === 'super admin') {
+            $adminItems[] = ['users', 'pages/users.php', 'Users', 'users'];
+        }
+        $adminItems[] = ['system-logs', 'pages/system-logs.php', 'System Logs', 'logs'];
+        $navSections['Administration'] = $adminItems;
     }
 }
 ?>
@@ -67,7 +70,11 @@ if ($role === 'customer') {
     </div>
 
     <div class="sidebar-version">
-        v<?php echo defined('APP_VERSION') ? APP_VERSION : '1.0.0'; ?>
+        <span>v<?php echo defined('APP_VERSION') ? APP_VERSION : '1.0.0'; ?></span>
+        <span class="sidebar-version-sep">&bull;</span>
+        <span id="sidebarServerClock" class="sidebar-server-clock" data-server-ts="<?php echo time(); ?>" title="Server Time (Asia/Manila)">
+            <?php echo date('H:i:s'); ?>
+        </span>
     </div>
 
 </aside>

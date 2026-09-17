@@ -1,9 +1,17 @@
 <?php
-// Shared flash-message renderer. Reads ?added / ?edited / ?error from the query
+// Shared flash-message renderer. Reads ?success / ?saved / ?added / ?edited / ?error from the query
 // string and the optional $dbError variable. Customize per page by setting
-// $flashAdded / $flashEdited (pre-rendered HTML) and $flashAfterError before
+// $flashSuccess / $flashAdded / $flashEdited (pre-rendered HTML) and $flashAfterError before
 // including this file.
 $dbError = $dbError ?? '';
+
+if (isset($_GET['success'])): ?>
+    <div class="flash success"><?php echo $flashSuccess ?? e($_GET['success']); ?></div>
+<?php endif;
+
+if (isset($_GET['saved'])): ?>
+    <div class="flash success"><?php echo $flashSaved ?? e($_GET['saved']); ?></div>
+<?php endif;
 
 if (isset($_GET['added'])): ?>
     <div class="flash success"><?php echo $flashAdded ?? e($_GET['added']); ?></div>

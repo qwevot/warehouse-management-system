@@ -4,6 +4,7 @@
 // own serial, barcode, and QR. Called via AJAX from the Items and Generator pages.
 require_once __DIR__ . '/../includes/auth.php';
 require_login_api();
+require_csrf_api();
 require_can_api('inventory.manage');
 
 $pdo  = json_db();
@@ -34,7 +35,7 @@ try {
         // Guard against duplicate imported serials colliding with active rows;
         // on collision fall back to an auto-generated serial.
         if ($serial !== null) {
-            $dup = $pdo->prepare('SELECT id FROM inventory_list WHERE serial = ? AND deleted_at IS NULL');
+            $dup = $pdo->prepare('SELECT id FROM inventory_units WHERE serial = ? AND deleted_at IS NULL');
             $dup->execute([$serial]);
             if ($dup->fetch()) {
                 $serial = null;
@@ -46,6 +47,7 @@ try {
             'brand'       => $brand,
             'quantity'    => $qty,
             'location'    => $location,
+            'serial'      => $serial,
             'status'      => $status,
             'modified_by' => $modifiedBy,
         ]);
@@ -54,8 +56,18 @@ try {
     }
 
     $pdo->commit();
+
+    log_activity('inventory.import', 'inventory_units', null, [
+        'count' => $count,
+        'source' => 'spreadsheet_import'
+    ], 'success');
 } catch (Exception $e) {
-    $pdo->rollBack();
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+    log_activity('inventory.import', 'inventory_units', null, [
+        'error' => $e->getMessage()
+    ], 'failure');
     json_fail('Import failed. No rows were added.');
 }
 

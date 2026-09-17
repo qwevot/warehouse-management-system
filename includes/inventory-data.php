@@ -17,6 +17,10 @@ function inventory_columns(string $mode): array
             return ['no', 'photo', 'item', 'brand','quantity', 'serial', 'location', 'barcode', 'action'];
         case 'units':
             return ['no', 'action', 'photo', 'item', 'brand', 'location', 'status', 'serial', 'barcode', 'registered', 'last_modified', 'modified_by'];
+        case 'stock-in':
+        case 'stock-out':
+        case 'transfers':
+            return ['no', 'action', 'photo', 'item', 'brand', 'quantity', 'location', 'registered', 'status'];
         default:
             return ['no', 'action', 'photo', 'item', 'brand', 'quantity', 'location', 'status', 'barcode', 'registered', 'last_modified', 'modified_by'];
     }
@@ -27,12 +31,12 @@ function inventory_columns(string $mode): array
 function inventory_scope(string $mode): string
 {
     if ($mode === 'bin') {
-        return 'deleted_at IS NOT NULL';
+        return "u.deleted_at IS NOT NULL AND u.status != 'staged'";
     }
-    if ($mode === 'list' || $mode === 'generator') {
-        return "deleted_at IS NULL AND quantity > 0 AND status = 'available' AND deployment_site = 'In Warehouse'";
+    if ($mode === 'units') {
+        return "u.deleted_at IS NULL AND u.status != 'staged'";
     }
-    return "deleted_at IS NULL AND status = 'available' AND deployment_site = 'In Warehouse'";
+    return "u.deleted_at IS NULL AND u.status = 'available' AND (u.deployment_site = 'In Warehouse' OR u.deployment_site = '' OR u.deployment_site IS NULL)";
 }
 
 // Normalize request input (from $_GET or $_POST) into a validated state array.
@@ -59,10 +63,12 @@ function inventory_state_from_input(array $in): array
         'size'  => $size,
         'q'     => trim((string)($in['q'] ?? '')),
         'sort'  => $sort,
-        'brand' => $list('brand'),
-        'shelf' => $list('shelf'),
-        'row'   => $list('row'),
-        'col'   => $list('col'),
+        'brand'    => $list('brand'),
+        'location' => trim((string)($in['location'] ?? '')),
+        'date'     => trim((string)($in['date'] ?? 'all')),
+        'shelf'    => $list('shelf'),
+        'row'      => $list('row'),
+        'col'      => $list('col'),
     ];
 }
 
@@ -76,54 +82,76 @@ function inventory_state_from_request(): array
 // LIMIT/OFFSET is skipped and every matching row is returned (used for export).
 function inventory_fetch(PDO $pdo, string $mode, array $state, bool $all = false): array
 {
-    if ($mode === 'units' || $mode === 'bin') {
-        $where = [$mode === 'bin' 
-            ? 'u.deleted_at IS NOT NULL' 
-            : "u.deleted_at IS NULL AND i.deleted_at IS NULL"
-        ];
-        $params = [];
+    $where = [inventory_scope($mode)];
+    $params = [];
 
-        $q = (string)($state['q'] ?? '');
-        if ($q !== '') {
-            $like = '%' . $q . '%';
-            $where[] = '(i.name LIKE ? OR i.brand LIKE ? OR u.serial LIKE ? OR i.barcode LIKE ? OR COALESCE(u.location, i.location, "") LIKE ? OR COALESCE(u.bin_note, "") LIKE ? OR COALESCE(u.modified_by, "") LIKE ?)';
+    $q = (string)($state['q'] ?? '');
+    if ($q !== '') {
+        $like = '%' . $q . '%';
+        if ($mode === 'units' || $mode === 'bin') {
+            $where[] = '(mi.product_name LIKE ? OR mi.brand LIKE ? OR u.serial LIKE ? OR u.barcode LIKE ? OR COALESCE(NULLIF(u.bin_location, ""), NULLIF(u.deployment_site, ""), u.location, "") LIKE ? OR COALESCE(u.bin_note, "") LIKE ? OR COALESCE(u.modified_by, "") LIKE ?)';
             array_push($params, $like, $like, $like, $like, $like, $like, $like);
+        } else {
+            $where[] = '(mi.product_name LIKE ? OR mi.brand LIKE ? OR u.barcode LIKE ? OR COALESCE(NULLIF(u.bin_location, ""), NULLIF(u.deployment_site, ""), u.location, "") LIKE ? OR COALESCE(u.bin_note, "") LIKE ? OR COALESCE(u.modified_by, "") LIKE ?)';
+            array_push($params, $like, $like, $like, $like, $like, $like);
         }
+    }
 
-        $brand = (array)($state['brand'] ?? []);
-        if (count($brand) > 0) {
-            $ph = implode(',', array_fill(0, count($brand), '?'));
-            $where[] = 'i.brand IN (' . $ph . ')';
-            foreach ($brand as $b) $params[] = $b;
-        }
+    $brand = (array)($state['brand'] ?? []);
+    if (count($brand) > 0) {
+        $ph = implode(',', array_fill(0, count($brand), '?'));
+        $where[] = 'mi.brand IN (' . $ph . ')';
+        foreach ($brand as $b) $params[] = $b;
+    }
 
-        foreach (['shelf' => 'S', 'row' => 'R', 'col' => 'C'] as $key => $prefix) {
-            $vals = (array)($state[$key] ?? []);
-            $parts = [];
-            foreach ($vals as $v) {
-                $v = (string)$v;
-                if (preg_match('/^' . $prefix . '\d{2}$/', $v) !== 1) continue;
-                if ($key === 'shelf') {
-                    $parts[] = 'COALESCE(u.location, i.location, "") LIKE ?';
-                    $params[] = $v . '-%';
-                } elseif ($key === 'row') {
-                    $parts[] = 'COALESCE(u.location, i.location, "") LIKE ?';
-                    $params[] = '%-' . $v . '-%';
-                } else {
-                    $parts[] = 'COALESCE(u.location, i.location, "") LIKE ?';
-                    $params[] = '%-' . $v;
-                }
+    $locCat = (string)($state['location'] ?? '');
+    if ($locCat === 'warehouse') {
+        $where[] = '(COALESCE(u.deployment_site, "") = "In Warehouse" OR COALESCE(u.deployment_site, "") = "" OR COALESCE(u.bin_location, u.location, "") LIKE "S%")';
+    } elseif ($locCat === 'transit') {
+        $where[] = '(COALESCE(u.deployment_site, "") LIKE "In Transit%" OR COALESCE(u.bin_location, u.location, "") LIKE "In Transit%" OR u.status = "in_transit")';
+    } elseif ($locCat === 'office') {
+        $where[] = '(COALESCE(u.deployment_site, "") = "Main Office" OR COALESCE(u.location, "") = "Main Office")';
+    } elseif ($locCat === 'customer') {
+        $where[] = '(COALESCE(u.deployment_site, "") NOT LIKE "In Transit%" AND COALESCE(u.deployment_site, "") != "In Warehouse" AND COALESCE(u.deployment_site, "") != "Main Office" AND COALESCE(u.location, "") != "Main Office" AND COALESCE(u.deployment_site, "") != "" AND COALESCE(u.bin_location, u.location, "") NOT LIKE "S%")';
+    }
+
+    foreach (['shelf' => 'S', 'row' => 'R', 'col' => 'C'] as $key => $prefix) {
+        $vals = (array)($state[$key] ?? []);
+        $parts = [];
+        foreach ($vals as $v) {
+            $v = (string)$v;
+            if (preg_match('/^' . $prefix . '\d{2}$/', $v) !== 1) continue;
+            if ($key === 'shelf') {
+                $parts[] = 'COALESCE(NULLIF(u.bin_location, ""), u.location, "") LIKE ?';
+                $params[] = $v . '-%';
+            } elseif ($key === 'row') {
+                $parts[] = 'COALESCE(NULLIF(u.bin_location, ""), u.location, "") LIKE ?';
+                $params[] = '%-' . $v . '-%';
+            } else {
+                $parts[] = 'COALESCE(NULLIF(u.bin_location, ""), u.location, "") LIKE ?';
+                $params[] = '%-' . $v;
             }
-            if (count($parts) > 0) $where[] = '(' . implode(' OR ', $parts) . ')';
         }
+        if (count($parts) > 0) $where[] = '(' . implode(' OR ', $parts) . ')';
+    }
 
-        $whereSql = implode(' AND ', $where);
+    $dateFilter = (string)($state['date'] ?? 'all');
+    if ($dateFilter === 'today') {
+        $where[] = 'u.created_at >= CURDATE()';
+    } elseif ($dateFilter === 'week') {
+        $where[] = 'u.created_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)';
+    } elseif ($dateFilter === 'month') {
+        $where[] = 'u.created_at >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)';
+    }
 
+    $whereSql = implode(' AND ', $where);
+
+    if ($mode === 'units' || $mode === 'bin') {
         $orderMap = [
             'newest'        => 'u.id DESC',
             'oldest'        => 'u.id ASC',
-            'name'          => 'i.name ASC, u.id DESC',
-            'nameDesc'      => 'i.name DESC, u.id DESC',
+            'name'          => 'mi.product_name ASC, u.id DESC',
+            'nameDesc'      => 'mi.product_name DESC, u.id DESC',
             'created-desc'  => 'u.created_at DESC, u.id DESC',
             'created-asc'   => 'u.created_at ASC, u.id ASC',
             'modified-desc' => 'COALESCE(u.updated_at, u.created_at) DESC, u.id DESC',
@@ -135,21 +163,22 @@ function inventory_fetch(PDO $pdo, string $mode, array $state, bool $all = false
         ];
         $order = $orderMap[$state['sort'] ?? 'newest'] ?? 'u.id DESC';
 
-        $st = $pdo->prepare('SELECT COUNT(*) FROM inventory_units u JOIN inventory_list i ON i.id = u.inventory_id WHERE ' . $whereSql);
+        $st = $pdo->prepare('SELECT COUNT(*) FROM inventory_units u JOIN master_items mi ON mi.id = u.master_item_id WHERE ' . $whereSql);
         $st->execute($params);
         $total = (int)$st->fetchColumn();
 
         $size = max(1, min(200, (int)($state['size'] ?? 10)));
         $page = max(1, (int)($state['page'] ?? 1));
 
-        $selectSql = "SELECT u.id, u.inventory_id, u.serial, u.qr, u.status, u.created_at, u.updated_at, u.modified_by, u.bin_note, u.deleted_at,
-                             u.bin_location, u.deployment_site,
-                             COALESCE(NULLIF(u.bin_location, ''), NULLIF(u.deployment_site, ''), u.location, i.location, '') AS location,
-                             i.name, i.brand, i.photo, i.barcode, 1 AS quantity
-                      FROM inventory_units u
-                      JOIN inventory_list i ON i.id = u.inventory_id
-                      WHERE {$whereSql}
-                      ORDER BY {$order}";
+        $selectSql = "SELECT u.id, u.inventory_id, u.master_item_id, u.serial, u.qr, u.status, u.created_at, u.updated_at, u.modified_by, u.bin_note, u.deleted_at,
+                            u.bin_location, u.deployment_site, u.location AS raw_location,
+                            COALESCE(NULLIF(u.bin_location, ''), NULLIF(u.location, ''), u.deployment_site, '') AS location,
+                            mi.product_name AS name, mi.brand AS brand, mi.product_code, mi.product_class,
+                            COALESCE(u.photo, '') AS photo, u.barcode, 1 AS quantity
+                    FROM inventory_units u
+                    JOIN master_items mi ON mi.id = u.master_item_id
+                    WHERE {$whereSql}
+                    ORDER BY {$order}";
 
         if ($all) {
             $st = $pdo->prepare($selectSql);
@@ -169,70 +198,61 @@ function inventory_fetch(PDO $pdo, string $mode, array $state, bool $all = false
         return ['rows' => $rows, 'total' => $total, 'page' => $page, 'size' => $size];
     }
 
-    $where = [inventory_scope($mode)];
-    $params = [];
-
-    $q = (string)($state['q'] ?? '');
-    if ($q !== '') {
-        $like = '%' . $q . '%';
-        $where[] = '(name LIKE ? OR brand LIKE ? OR barcode LIKE ? OR location LIKE ? OR COALESCE(bin_location, "") LIKE ? OR COALESCE(deployment_site, "") LIKE ? OR COALESCE(bin_note, "") LIKE ? OR COALESCE(modified_by, "") LIKE ?)';
-        array_push($params, $like, $like, $like, $like, $like, $like, $like, $like);
-    }
-
-    $brand = (array)($state['brand'] ?? []);
-    if (count($brand) > 0) {
-        $ph = implode(',', array_fill(0, count($brand), '?'));
-        $where[] = 'brand IN (' . $ph . ')';
-        foreach ($brand as $b) $params[] = $b;
-    }
-
-    foreach (['shelf' => 'S', 'row' => 'R', 'col' => 'C'] as $key => $prefix) {
-        $vals = (array)($state[$key] ?? []);
-        $parts = [];
-        foreach ($vals as $v) {
-            $v = (string)$v;
-            if (preg_match('/^' . $prefix . '\d{2}$/', $v) !== 1) continue;
-            if ($key === 'shelf') {
-                $parts[] = '(COALESCE(bin_location, location) LIKE ?)';
-                $params[] = $v . '-%';
-            } elseif ($key === 'row') {
-                $parts[] = '(COALESCE(bin_location, location) LIKE ?)';
-                $params[] = '%-' . $v . '-%';
-            } else {
-                $parts[] = '(COALESCE(bin_location, location) LIKE ?)';
-                $params[] = '%-' . $v;
-            }
-        }
-        if (count($parts) > 0) $where[] = '(' . implode(' OR ', $parts) . ')';
-    }
-
-    $whereSql = implode(' AND ', $where);
-
+    // BARCODE LEVEL (Lots) for list, generator, stock-in, stock-out, transfers
     $orderMap = [
-        'newest'        => 'id DESC',
-        'oldest'        => 'id ASC',
-        'name'          => 'name ASC',
-        'nameDesc'      => 'name DESC',
-        'created-desc'  => 'created_at DESC, id DESC',
-        'created-asc'   => 'created_at ASC, id ASC',
-        'modified-desc' => 'COALESCE(updated_at, created_at) DESC, id DESC',
-        'modified-asc'  => 'COALESCE(updated_at, created_at) ASC, id ASC',
-        'created_desc'  => 'created_at DESC, id DESC',
-        'created_asc'   => 'created_at ASC, id ASC',
-        'modified_desc' => 'COALESCE(updated_at, created_at) DESC, id DESC',
-        'modified_asc'  => 'COALESCE(updated_at, created_at) ASC, id ASC',
+        'newest'        => 'MAX(u.id) DESC',
+        'oldest'        => 'MIN(u.id) ASC',
+        'name'          => 'mi.product_name ASC, MAX(u.id) DESC',
+        'nameDesc'      => 'mi.product_name DESC, MAX(u.id) DESC',
+        'created-desc'  => 'MIN(u.created_at) DESC, MAX(u.id) DESC',
+        'created-asc'   => 'MIN(u.created_at) ASC, MIN(u.id) ASC',
+        'modified-desc' => 'MAX(COALESCE(u.updated_at, u.created_at)) DESC, MAX(u.id) DESC',
+        'modified-asc'  => 'MAX(COALESCE(u.updated_at, u.created_at)) ASC, MIN(u.id) ASC',
+        'created_desc'  => 'MIN(u.created_at) DESC, MAX(u.id) DESC',
+        'created_asc'   => 'MIN(u.created_at) ASC, MIN(u.id) ASC',
+        'modified_desc' => 'MAX(COALESCE(u.updated_at, u.created_at)) DESC, MAX(u.id) DESC',
+        'modified_asc'  => 'MAX(COALESCE(u.updated_at, u.created_at)) ASC, MIN(u.id) ASC',
     ];
-    $order = $orderMap[$state['sort'] ?? 'newest'] ?? 'id DESC';
+    $order = $orderMap[$state['sort'] ?? 'newest'] ?? 'MAX(u.id) DESC';
 
-    $st = $pdo->prepare('SELECT COUNT(*) FROM inventory_list WHERE ' . $whereSql);
+    $st = $pdo->prepare('SELECT COUNT(DISTINCT COALESCE(NULLIF(u.barcode, ""), CONCAT("unit-", u.id)), u.master_item_id) 
+                        FROM inventory_units u 
+                        JOIN master_items mi ON mi.id = u.master_item_id 
+                        WHERE ' . $whereSql);
     $st->execute($params);
     $total = (int)$st->fetchColumn();
 
     $size = max(1, min(200, (int)($state['size'] ?? 10)));
     $page = max(1, (int)($state['page'] ?? 1));
 
+    $selectSql = "SELECT 
+                    MIN(u.id) AS id,
+                    u.master_item_id,
+                    u.barcode,
+                    mi.product_name AS name,
+                    mi.brand AS brand,
+                    mi.product_code,
+                    mi.product_class,
+                    COUNT(u.id) AS quantity,
+                    COALESCE(MAX(NULLIF(u.photo, '')), '') AS photo,
+                    MAX(u.status) AS status,
+                    COALESCE(NULLIF(MAX(u.bin_location), ''), NULLIF(MAX(u.location), ''), MAX(u.deployment_site), '') AS location,
+                    MAX(u.bin_location) AS bin_location,
+                    MAX(u.deployment_site) AS deployment_site,
+                    MAX(u.location) AS raw_location,
+                    MIN(u.created_at) AS created_at,
+                    MAX(COALESCE(u.updated_at, u.created_at)) AS updated_at,
+                    MAX(u.modified_by) AS modified_by,
+                    '' AS serial,
+                    '' AS qr
+                FROM inventory_units u
+                JOIN master_items mi ON mi.id = u.master_item_id
+                WHERE {$whereSql}
+                GROUP BY COALESCE(NULLIF(u.barcode, ''), CONCAT('unit-', u.id)), u.master_item_id
+                ORDER BY {$order}";
+
     if ($all) {
-        $st = $pdo->prepare('SELECT * FROM inventory_list WHERE ' . $whereSql . ' ORDER BY ' . $order);
+        $st = $pdo->prepare($selectSql);
         $st->execute($params);
         $rows = $st->fetchAll();
         return ['rows' => $rows, 'total' => $total, 'page' => 1, 'size' => $total];
@@ -242,7 +262,7 @@ function inventory_fetch(PDO $pdo, string $mode, array $state, bool $all = false
     if ($page > $pageCount) $page = $pageCount;
     $offset = ($page - 1) * $size;
 
-    $st = $pdo->prepare('SELECT * FROM inventory_list WHERE ' . $whereSql . ' ORDER BY ' . $order . ' LIMIT ' . $size . ' OFFSET ' . $offset);
+    $st = $pdo->prepare($selectSql . ' LIMIT ' . $size . ' OFFSET ' . $offset);
     $st->execute($params);
     $rows = $st->fetchAll();
 
@@ -254,61 +274,29 @@ function inventory_fetch(PDO $pdo, string $mode, array $state, bool $all = false
 // on the initial page load.
 function inventory_facets(PDO $pdo, string $mode): array
 {
-    $scope = inventory_scope($mode);
+    $whereSql = ($mode === 'bin') ? 'u.deleted_at IS NOT NULL' : 'u.deleted_at IS NULL';
+    $brands = $pdo->query("SELECT DISTINCT mi.brand FROM inventory_units u JOIN master_items mi ON mi.id = u.master_item_id WHERE {$whereSql} AND mi.brand IS NOT NULL AND mi.brand <> '' ORDER BY mi.brand ASC")
+        ->fetchAll(PDO::FETCH_COLUMN);
 
-    if ($mode === 'units' || $mode === 'bin') {
-        $whereSql = $mode === 'bin' ? 'u.deleted_at IS NOT NULL' : 'u.deleted_at IS NULL AND i.deleted_at IS NULL';
-        $brands = $pdo->query("SELECT DISTINCT i.brand FROM inventory_units u JOIN inventory_list i ON i.id = u.inventory_id WHERE {$whereSql} AND i.brand IS NOT NULL AND i.brand <> '' ORDER BY i.brand ASC")
-            ->fetchAll(PDO::FETCH_COLUMN);
+    $locs = $pdo->query("SELECT DISTINCT COALESCE(NULLIF(u.bin_location, ''), u.location) FROM inventory_units u WHERE {$whereSql} AND (u.location IS NOT NULL OR u.bin_location IS NOT NULL)")
+        ->fetchAll(PDO::FETCH_COLUMN);
 
-        $locs = $pdo->query("SELECT DISTINCT i.location FROM inventory_units u JOIN inventory_list i ON i.id = u.inventory_id WHERE {$whereSql} AND i.location IS NOT NULL AND i.location <> ''")
-            ->fetchAll(PDO::FETCH_COLUMN);
-
-        $shelves = [];
-        $rows    = [];
-        $cols    = [];
-        foreach ($locs as $loc) {
-            $parts = explode('-', (string)$loc);
-            if (isset($parts[0]) && preg_match('/^S\d{2}$/', $parts[0])) $shelves[] = $parts[0];
-            if (isset($parts[1]) && preg_match('/^R\d{2}$/', $parts[1])) $rows[]    = $parts[1];
-            if (isset($parts[2]) && preg_match('/^C\d{2}$/', $parts[2])) $cols[]    = $parts[2];
-        }
-
-        return [
-            'brand' => array_values(array_unique($brands)),
-            'shelf' => array_values(array_unique($shelves)),
-            'row'   => array_values(array_unique($rows)),
-            'col'   => array_values(array_unique($cols)),
-        ];
-    } else {
-        $brands = $pdo->query("SELECT DISTINCT brand FROM inventory_list WHERE $scope AND brand IS NOT NULL AND brand <> '' ORDER BY brand ASC")
-            ->fetchAll(PDO::FETCH_COLUMN);
-
-        $locations = $pdo->query("SELECT DISTINCT location FROM inventory_list WHERE $scope AND location IS NOT NULL AND location <> ''")
-            ->fetchAll(PDO::FETCH_COLUMN);
-
-        $shelves = [];
-        $rows = [];
-        $cols = [];
-        foreach ($locations as $loc) {
-            $parts = explode('-', (string)$loc);
-            if (count($parts) === 3) {
-                $shelves[] = $parts[0];
-                $rows[] = $parts[1];
-                $cols[] = $parts[2];
-            }
-        }
-        sort($shelves);
-        sort($rows);
-        sort($cols);
-
-        return [
-            'brand' => array_values(array_unique($brands)),
-            'shelf' => array_values(array_unique($shelves)),
-            'row'   => array_values(array_unique($rows)),
-            'col'   => array_values(array_unique($cols)),
-        ];
+    $shelves = [];
+    $rows    = [];
+    $cols    = [];
+    foreach ($locs as $loc) {
+        $parts = explode('-', (string)$loc);
+        if (isset($parts[0]) && preg_match('/^S\d{2}$/', $parts[0])) $shelves[] = $parts[0];
+        if (isset($parts[1]) && preg_match('/^R\d{2}$/', $parts[1])) $rows[]    = $parts[1];
+        if (isset($parts[2]) && preg_match('/^C\d{2}$/', $parts[2])) $cols[]    = $parts[2];
     }
+
+    return [
+        'brand' => array_values(array_unique($brands)),
+        'shelf' => array_values(array_unique($shelves)),
+        'row'   => array_values(array_unique($rows)),
+        'col'   => array_values(array_unique($cols)),
+    ];
 }
 
 // The JSON shape handed to the browser for modals and export.
@@ -364,6 +352,22 @@ function render_inventory_action_buttons(array $item, string $mode): string
         $html .= '<button class="btn icon-btn view" title="View Unit Details" onclick="openItemModal(' . $id . ')">' . icon_view() . '</button>';
         if (user_can('inventory.manage')) {
             $html .= '<button class="btn icon-btn delete" title="Move Unit to Bin" onclick="runDeleteItem(' . $id . ', \'unit\')">' . icon_delete() . '</button>';
+        }
+        return $html;
+    }
+
+    if (in_array($mode, ['stock-in', 'stock-out', 'transfers'], true)) {
+        $html .= '<button class="btn icon-btn view" title="View Details" onclick="openItemModal(' . $id . ')">' . icon_view() . '</button>';
+        $html .= '<button class="btn icon-btn view" title="Print Barcode &amp; Unit QR Codes" onclick="openPrintLotModal(' . $id . ')">' . icon_print() . '</button>';
+        if (user_can('movement.manage')) {
+            $tooltips = [
+                'stock-in'  => 'Autofill the stock-in form with this item',
+                'stock-out' => 'Autofill the stock-out form with this item',
+                'transfers' => 'Autofill the transfer form with this item',
+            ];
+            $title = htmlspecialchars($tooltips[$mode] ?? 'Autofill with this item', ENT_QUOTES, 'UTF-8');
+            $iconArrow = '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><g stroke-width="0"></g><g stroke-linecap="round" stroke-linejoin="round"></g><g><path d="M4 17V15.8C4 14.1198 4 13.2798 4.32698 12.638C4.6146 12.0735 5.07354 11.6146 5.63803 11.327C6.27976 11 7.11984 11 8.8 11H20M20 11L16 7M20 11L16 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></g></svg>';
+            $html .= '<button class="btn icon-btn view" title="' . $title . '" onclick="pickStockItem(' . $id . ')">' . $iconArrow . '</button>';
         }
         return $html;
     }
@@ -430,20 +434,31 @@ function render_inventory_rows(array $rows, string $mode, int $startIndex = 0): 
         }
 
         if (in_array('location', $cols, true)) {
-            $binLoc = trim((string)($item['bin_location'] ?? ''));
+            $rawLoc  = trim((string)($item['raw_location'] ?? $item['location'] ?? ''));
+            $binLoc  = trim((string)($item['bin_location'] ?? ''));
             $depSite = trim((string)($item['deployment_site'] ?? ''));
-            if ($binLoc === '' && preg_match('/^S\d+-R\d+-C\d+/', (string)($item['location'] ?? ''))) {
-                $binLoc = trim((string)$item['location']);
-            }
-            if ($depSite === '') {
-                $depSite = ($binLoc !== '') ? 'In Warehouse' : trim((string)($item['location'] ?? ''));
+
+            if ($binLoc === '' && preg_match('/^S\d+-R\d+-C\d+/', $rawLoc)) {
+                $binLoc = $rawLoc;
             }
 
+            // Primary location badge: either shelf coordinate (binLoc) or custom outside-shelf text (rawLoc)
+            $primaryLoc = '';
             if ($binLoc !== '') {
+                $primaryLoc = $binLoc;
+            } elseif ($rawLoc !== '' && $rawLoc !== 'In Warehouse' && $rawLoc !== $depSite) {
+                $primaryLoc = $rawLoc;
+            }
+
+            if ($depSite === '') {
+                $depSite = ($binLoc !== '' || $primaryLoc !== '') ? 'In Warehouse' : ($rawLoc ?: 'In Warehouse');
+            }
+
+            if ($primaryLoc !== '') {
                 $html .= '<td data-label="Location">';
                 $html .= '<div class="location-cell">';
-                $html .= '<span class="bin-badge">' . e($binLoc) . '</span>';
-                if ($depSite !== '' && $depSite !== $binLoc) {
+                $html .= '<span class="bin-badge">' . e($primaryLoc) . '</span>';
+                if ($depSite !== '' && $depSite !== $primaryLoc) {
                     $html .= '<span class="site-subtext">' . e($depSite) . '</span>';
                 }
                 $html .= '</div></td>';
@@ -508,7 +523,7 @@ function render_inventory_rows(array $rows, string $mode, int $startIndex = 0): 
 
 function render_inventory_screen(string $pageTitle, string $activeNav, string $mode): void
 {
-    require_login();
+    require_staff();
 
     $state  = inventory_state_from_request();
     $rows   = [];
@@ -518,7 +533,7 @@ function render_inventory_screen(string $pageTitle, string $activeNav, string $m
 
     try {
         $pdo = db();
-        $result = inventory_fetch($pdo, $mode, $state, true);
+        $result = inventory_fetch($pdo, $mode, $state, false);
         $rows  = $result['rows'];
         $total = $result['total'];
         $state['page'] = $result['page'];

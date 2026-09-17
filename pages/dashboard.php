@@ -5,6 +5,11 @@ $activeNav = 'dashboard';
 require_once __DIR__ . '/../includes/auth.php';
 require_login();
 
+$currentUser = current_user();
+$userRole    = current_role();
+$userCompany = trim((string)($currentUser['company'] ?? ''));
+$fullName    = $currentUser['full_name'] ?? $currentUser['username'] ?? 'User';
+
 $totalQty = 0;
 $available = 0;
 $brandsInUse = 0;
@@ -18,28 +23,18 @@ try {
 
     // KPI counts (active in-warehouse inventory).
     $stmt = $pdo->query("
-        SELECT COALESCE(SUM(quantity), 0) 
-        FROM inventory_list 
+        SELECT COUNT(*) 
+        FROM inventory_units 
         WHERE deleted_at IS NULL
-          AND status = 'available'
-          AND quantity > 0
-          AND deployment_site = 'In Warehouse'
+        AND status = 'available'
+        AND (deployment_site = 'In Warehouse' OR deployment_site = '' OR deployment_site IS NULL)
     ");
 
     $totalQty    = (int)$stmt->fetchColumn();
-    $brandsInUse = (int)$pdo->query("SELECT COUNT(DISTINCT brand) FROM inventory_list WHERE deleted_at IS NULL AND quantity > 0 AND status = 'available' AND brand IS NOT NULL AND brand <> '' AND deployment_site = 'In Warehouse'")->fetchColumn();
-    $itemsInUse  = (int)$pdo->query("SELECT COUNT(DISTINCT name) FROM inventory_list WHERE deleted_at IS NULL AND quantity > 0 AND status = 'available' AND deployment_site = 'In Warehouse'")->fetchColumn();
+    $brandsInUse = (int)$pdo->query("SELECT COUNT(DISTINCT mi.brand) FROM inventory_units u JOIN master_items mi ON mi.id = u.master_item_id WHERE u.deleted_at IS NULL AND u.status = 'available' AND mi.brand IS NOT NULL AND mi.brand <> '' AND (u.deployment_site = 'In Warehouse' OR u.deployment_site = '' OR u.deployment_site IS NULL)")->fetchColumn();
+    $itemsInUse  = (int)$pdo->query("SELECT COUNT(DISTINCT mi.product_name) FROM inventory_units u JOIN master_items mi ON mi.id = u.master_item_id WHERE u.deleted_at IS NULL AND u.status = 'available' AND (u.deployment_site = 'In Warehouse' OR u.deployment_site = '' OR u.deployment_site IS NULL)")->fetchColumn();
 
-    // Items for the quick search (feeds window.STOCK_ITEMS).
-    $items = $pdo->query("
-        SELECT id, name, brand, serial, quantity, location, bin_location, deployment_site, barcode, qr, status, photo 
-        FROM inventory_list 
-        WHERE deleted_at IS NULL 
-          AND quantity > 0 
-          AND status = 'available'
-          AND deployment_site = 'In Warehouse'
-        ORDER BY name ASC
-    ")->fetchAll();
+
 
     $userRole = current_role();
     $userCompany = trim((string)($currentUser['company'] ?? ''));
@@ -52,19 +47,17 @@ try {
     if ($userRole !== 'customer') {
         $stmtLow = $pdo->prepare("
             SELECT mi.id, mi.product_code, mi.product_name, mi.brand, mi.product_class,
-                   COALESCE(ias.threshold, ?) AS effective_threshold,
-                   (SELECT COALESCE(SUM(m.quantity), 0) 
-                    FROM inventory_list m 
-                    WHERE m.name = mi.product_name COLLATE utf8mb4_general_ci 
-                      AND COALESCE(m.brand, '') = mi.brand COLLATE utf8mb4_general_ci 
-                      AND m.deleted_at IS NULL 
-                      AND m.status = 'available'
-                      AND m.quantity > 0
-                      AND m.deployment_site = 'In Warehouse') AS total_qty
+                COALESCE(ias.threshold, ?) AS effective_threshold,
+                (SELECT COUNT(*) 
+                    FROM inventory_units m 
+                    WHERE m.master_item_id = mi.id 
+                    AND m.deleted_at IS NULL 
+                    AND m.status = 'available'
+                    AND (m.deployment_site = 'In Warehouse' OR m.deployment_site = '' OR m.deployment_site IS NULL)) AS total_qty
             FROM master_items mi
             LEFT JOIN item_alert_settings ias ON ias.master_item_id = mi.id
             WHERE mi.deleted_at IS NULL
-              AND ias.alert_enabled = 1
+            AND ias.alert_enabled = 1
             HAVING total_qty <= effective_threshold
             ORDER BY total_qty ASC, mi.product_name ASC
         ");
@@ -77,17 +70,51 @@ try {
         $stmtCust = $pdo->prepare("
             SELECT COUNT(*) 
             FROM inventory_units u
-            JOIN inventory_list i ON i.id = u.inventory_id
             WHERE u.deleted_at IS NULL 
-              AND i.deleted_at IS NULL
-              AND (u.location LIKE ? OR u.location = ?)
+            AND (
+                u.location LIKE ? OR u.location = ? 
+                OR u.deployment_site LIKE ? OR u.deployment_site = ?
+                OR u.location LIKE ? OR u.deployment_site LIKE ?
+            )
         ");
-        $stmtCust->execute([$userCompany . ' - %', $userCompany]);
+        $compPattern = $userCompany . ' - %';
+        $compTransit = 'In Transit (' . $userCompany . '%';
+        $stmtCust->execute([$compPattern, $userCompany, $compPattern, $userCompany, $compTransit, $compTransit]);
         $customerEquipmentCount = (int)$stmtCust->fetchColumn();
     }
 
     // Recent activity (limited to latest 30 movements for performance).
-    $movements = fetch_movements($pdo, 30);
+    if ($userRole === 'customer') {
+        if ($userCompany !== '') {
+            $companyPattern = $userCompany . ' - %';
+            $stmtMoves = $pdo->prepare("
+                SELECT m.*, COALESCE(mi.product_name, '') AS item_name
+                FROM stock_movements m
+                LEFT JOIN inventory_units u ON u.id = m.item_id
+                LEFT JOIN master_items mi ON mi.id = u.master_item_id
+                WHERE m.issued_to LIKE ? 
+                   OR m.issued_to = ?
+                   OR m.note LIKE ?
+                   OR m.modified_by = ?
+                   OR m.modified_by LIKE ?
+                ORDER BY m.created_at DESC, m.id DESC
+                LIMIT 30
+            ");
+            $companyPrefix = '%' . $userCompany . '%';
+            $stmtMoves->execute([
+                $companyPattern,
+                $userCompany,
+                $companyPrefix,
+                $userCompany,
+                $companyPrefix
+            ]);
+            $movements = $stmtMoves->fetchAll();
+        } else {
+            $movements = [];
+        }
+    } else {
+        $movements = fetch_movements($pdo, 30);
+    }
 } catch (Exception $e) {
     $dbError = 'Could not load dashboard data from the database.';
 }
@@ -166,12 +193,13 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
         <div class="kpi-hint">View Items &rarr;</div>
     </a>
     <a href="<?php echo BASE_URL; ?>/pages/index.php" class="kpi-card kpi-link">
-        <div class="kpi-label">Total Items in Inventory</div>
+        <div class="kpi-label">Units in Inventory</div>
         <div class="kpi-value"><?php echo $totalQty; ?> Units</div>
         <div class="kpi-hint">View Warehouse Lots &rarr;</div>
     </a>
 </div>
 
+<?php if (user_can('movement.manage')): ?>
 <div class="quick-actions-grid">
     <a href="javascript:void(0)" onclick="openScanModal()" class="quick-action-card green">
         <div class="quick-action-icon">
@@ -193,7 +221,7 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
         </div>
         <div class="quick-action-arrow">&rarr;</div>
     </a>
-    <a href="<?php echo BASE_URL; ?>/pages/stock-out.php" class="quick-action-card red">
+    <a href="<?php echo BASE_URL; ?>/pages/stock-out.php" class="quick-action-card blue">
         <div class="quick-action-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
         </div>
@@ -203,7 +231,7 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
         </div>
         <div class="quick-action-arrow">&rarr;</div>
     </a>
-    <a href="<?php echo BASE_URL; ?>/pages/transfers.php" class="quick-action-card yellow">
+    <a href="<?php echo BASE_URL; ?>/pages/transfers.php" class="quick-action-card blue">
         <div class="quick-action-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16V4m0 0L3 8m4-4l4 4m6 4v12m0 0l4-4m-4 4l-4-4"/></svg>
         </div>
@@ -215,67 +243,91 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
     </a>
 </div>
 <?php endif; ?>
+<?php endif; ?>
 
 <?php include __DIR__ . '/../includes/item-card-select.php'; ?>
 
 <?php if ($userRole !== 'customer' && !empty($lowStockItems)): ?>
-<section class="inventory-section low-stock-section" id="lowStockSection" style="margin-bottom: 24px; border: 1.5px solid var(--amber); background: #ffffff; border-radius: 12px; overflow: hidden; padding: 0; box-shadow: 0 4px 16px rgba(245, 158, 11, 0.15);">
-    <button type="button" class="low-stock-toggle" id="lowStockToggle" onclick="toggleLowStockTable()" aria-expanded="false" style="width:100%; display:flex; justify-content:space-between; align-items:center; background:var(--amber); border:none; padding:14px 20px; cursor:pointer; text-align:left; font-family:inherit; color:#ffffff;">
-        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-            <div style="display:flex; align-items:center; justify-content:center; width:30px; height:30px; border-radius:8px; background:rgba(255,255,255,0.25); color:#ffffff; flex-shrink:0;">
+<section class="inventory-section low-stock-section" id="lowStockSection">
+    <div class="low-stock-header">
+        <div class="low-stock-header-left">
+            <div style="display:flex; align-items:center; justify-content:center; width:34px; height:34px; border-radius:8px; background:#f59e0b; color:#ffffff; flex-shrink:0; box-shadow: 0 2px 6px rgba(245, 158, 11, 0.35);">
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
             </div>
-            <div style="display:flex; align-items:center; gap:8px;">
-                <span style="font-size:15px; font-weight:700; color:#ffffff;">Low Stock Alerts</span>
-                <span style="font-size:12px; background:#ffffff; color:var(--amber-ink); padding:2px 8px; border-radius:999px; font-weight:800; box-shadow:0 1px 4px rgba(0,0,0,0.1);">
-                    <?php echo $lowStockCount; ?>
-                </span>
+            <div style="min-width: 0;">
+                <div class="low-stock-title-wrap">
+                    <span style="font-size:15px; font-weight:700; color:#92400e;">Low Stock Alerts</span>
+                    <span class="low-stock-badge-pill">
+                        <?php echo $lowStockCount; ?>
+                    </span>
+                </div>
+                <div style="font-size:12px; color:#b45309; margin-top:2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Check items with low stocks</div>
             </div>
-            <span style="font-size:12.5px; color:rgba(255,255,255,0.9);">
-                (items reaching or below their threshold)
-            </span>
         </div>
-        <div style="display:flex; align-items:center; gap:6px; color:#ffffff; font-size:13px; font-weight:600;">
-            <span id="lowStockToggleText">Show Details</span>
-            <svg id="lowStockChevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="transition: transform 0.2s ease;">
-                <path d="M6 9l6 6 6-6"/>
-            </svg>
+        <div class="low-stock-header-right" style="display:flex; align-items:center; gap:10px;">
+            <button type="button" class="btn sm primary" id="lowStockCollapseBtn" onclick="toggleLowStockCollapse()" style="background:#f59e0b; border-color:#d97706; font-weight:600; display:inline-flex; align-items:center; gap:6px;">
+                <span id="lowStockCollapseText">Show Details</span>
+                <svg id="lowStockCollapseChevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="transition: transform 0.2s ease;">
+                    <path d="M6 9l6 6 6-6"/>
+                </svg>
+            </button>
         </div>
-    </button>
+    </div>
 
-    <div class="table-container" id="lowStockTableContainer" style="display:none; border-top:1px solid rgba(0,0,0,0.08); background:#ffffff; margin:0; padding: 16px; 16px 16px; 16px">
-        <table>
-            <thead>
-                <tr>
-                    <th class="no-col">No.</th>
-                    <th>Product Code</th>
-                    <th>Product Name</th>
-                    <th>Brand</th>
-                    <th>Product Class</th>
-                    <th>Total Qty</th>
-                    <th>Threshold</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php foreach ($lowStockItems as $idx => $item): ?>
-                    <tr>
-                        <td class="no-col"><?php echo $idx + 1; ?></td>
-                        <td><code><?php echo e($item['product_code']); ?></code></td>
-                        <td><?php echo e($item['product_name']); ?></td>
-                        <td><?php echo dash($item['brand']); ?></td>
-                        <td><?php echo dash($item['product_class']); ?></td>
-                        <td>
-                            <strong style="color:<?php echo (int)$item['total_qty'] === 0 ? 'var(--red-ink)' : 'var(--amber-ink)'; ?>;">
-                                <?php echo (int)$item['total_qty']; ?>
-                            </strong>
-                        </td>
-                        <td style="color:var(--muted); font-size:12.5px;">
-                            &le; <?php echo (int)$item['effective_threshold']; ?>
-                        </td>
-                    </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
+    <!-- Collapsible Body (Hidden by default with 'Show Details') -->
+    <div id="lowStockCollapsibleBody" style="display:none;">
+        <?php foreach ($lowStockItems as $idx => $item): 
+            $isOos = ((int)$item['total_qty'] === 0);
+            $cardBg = $isOos ? '#fff1f2' : '#fefce8';
+            $cardBorder = $isOos ? '#fecdd3' : '#fef08a';
+            $badgeBg = $isOos ? '#ef4444' : '#f59e0b';
+            $badgeColor = '#ffffff';
+            $isExtra = ($idx >= 5);
+        ?>
+            <div class="low-stock-card <?php echo $isExtra ? 'low-stock-extra' : ''; ?>" style="display: <?php echo $isExtra ? 'none' : 'flex'; ?>; background: <?php echo $cardBg; ?>; border: 1px solid <?php echo $cardBorder; ?>;">
+                <div style="display: flex; align-items: center; gap: 12px; min-width: 0;">
+                    <div style="width: 8px; height: 8px; border-radius: 50%; background: <?php echo $badgeBg; ?>; flex-shrink: 0;"></div>
+                    <div style="min-width: 0;">
+                        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                            <span style="font-weight: 600; font-size: 13.5px; color: var(--ink);"><?php echo e($item['product_name']); ?></span>
+                            <code style="font-size: 11px; background: rgba(0,0,0,0.05); padding: 1px 5px; border-radius: 4px; color: var(--text);"><?php echo e($item['product_code']); ?></code>
+                        </div>
+                        <div style="font-size: 12px; color: var(--muted); margin-top: 2px;">
+                            <?php if (!empty($item['brand'])): ?>
+                                <span>Brand: <strong style="color: var(--text);"><?php echo e($item['brand']); ?></strong></span> &bull; 
+                            <?php endif; ?>
+                            <span>Threshold: &le; <?php echo (int)$item['effective_threshold']; ?> units</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="low-stock-card-right" style="display: flex; align-items: center; gap: 14px; flex-shrink: 0;">
+                    <div style="text-align: right;">
+                        <div style="font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; color: <?php echo $isOos ? '#b91c1c' : '#b45309'; ?>;">
+                            <?php echo $isOos ? 'Out of Stock' : 'Low Stock'; ?>
+                        </div>
+                        <div style="font-size: 15px; font-weight: 800; color: <?php echo $isOos ? '#dc2626' : '#d97706'; ?>;">
+                            <?php echo (int)$item['total_qty']; ?> <span style="font-size: 11px; font-weight: 600; color: var(--muted);">units</span>
+                        </div>
+                    </div>
+                    <a href="<?php echo BASE_URL; ?>/pages/stock-in.php" title="Receive Stock" class="btn sm secondary" style="padding: 5px 10px; font-size: 12px;">
+                        Add Stock
+                    </a>
+                </div>
+            </div>
+        <?php endforeach; ?>
+    </div>
+
+    <?php if ($lowStockCount > 5): ?>
+        <div style="padding: 10px 16px 14px; text-align: center; border-top: 1px solid #fef3c7; background: #fffdf5;">
+            <button type="button" id="lowStockMoreBtn" onclick="toggleLowStockMore()" class="btn sm secondary" style="font-weight: 600; font-size: 12.5px; background: #ffffff; border-color: #fde68a; color: #b45309; display: inline-flex; align-items: center; gap: 6px;">
+                <span id="lowStockMoreText">Show More (<?php echo $lowStockCount - 5; ?> more)</span>
+                <svg id="lowStockMoreChevron" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="transition: transform 0.2s ease;">
+                    <path d="M6 9l6 6 6-6"/>
+                </svg>
+            </button>
+        </div>
+    <?php endif; ?>
     </div>
 </section>
 <?php endif; ?>
@@ -340,8 +392,6 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
 <?php include __DIR__ . '/../includes/checkin-modal.php'; ?>
 
 <script>
-    <?php include __DIR__ . '/../includes/stock-items-data.php'; ?>
-
     // A successful scan opens the Check-In modal to confirm/update location
     window.setScanHandler(function (item) {
         if (window.openCheckInModal) {
@@ -352,27 +402,46 @@ $movePagination = buildPagination('move', ['pageSize' => 5]);
         return true;
     });
 
-    // Toggle Low Stock Alert table visibility
-    window.toggleLowStockTable = function (forceOpen) {
-        const container = document.getElementById("lowStockTableContainer");
-        const chevron   = document.getElementById("lowStockChevron");
-        const toggleBtn = document.getElementById("lowStockToggle");
-        const toggleTxt = document.getElementById("lowStockToggleText");
-        if (!container) return;
+    // Toggle Low Stock Alert "Show Details" / "Hide Details" collapse
+    window.toggleLowStockCollapse = function () {
+        const body    = document.getElementById("lowStockCollapsibleBody");
+        const btnText = document.getElementById("lowStockCollapseText");
+        const chevron = document.getElementById("lowStockCollapseChevron");
+        if (!body) return;
 
-        const isHidden = container.style.display === "none" || container.style.display === "";
-        const open = (typeof forceOpen === "boolean") ? forceOpen : isHidden;
+        const isHidden = body.style.display === "none" || body.style.display === "";
 
-        if (open) {
-            container.style.display = "block";
+        if (isHidden) {
+            body.style.display = "block";
+            if (btnText) btnText.textContent = "Hide Details";
             if (chevron) chevron.style.transform = "rotate(180deg)";
-            if (toggleTxt) toggleTxt.textContent = "Hide Details";
-            if (toggleBtn) toggleBtn.setAttribute("aria-expanded", "true");
         } else {
-            container.style.display = "none";
+            body.style.display = "none";
+            if (btnText) btnText.textContent = "Show Details";
             if (chevron) chevron.style.transform = "rotate(0deg)";
-            if (toggleTxt) toggleTxt.textContent = "Show Details";
-            if (toggleBtn) toggleBtn.setAttribute("aria-expanded", "false");
+        }
+    };
+
+    // Toggle Low Stock Alert "Show More" items
+    window.toggleLowStockMore = function () {
+        const extraCards = document.querySelectorAll(".low-stock-extra");
+        const btnText    = document.getElementById("lowStockMoreText");
+        const chevron    = document.getElementById("lowStockMoreChevron");
+        if (!extraCards.length) return;
+
+        const isHidden = extraCards[0].style.display === "none" || extraCards[0].style.display === "";
+
+        extraCards.forEach(function (card) {
+            card.style.display = isHidden ? "flex" : "none";
+        });
+
+        if (isHidden) {
+            if (btnText) btnText.textContent = "Show Less";
+            if (chevron) chevron.style.transform = "rotate(180deg)";
+        } else {
+            const count = extraCards.length;
+            if (btnText) btnText.textContent = "Show More (" + count + " more)";
+            if (chevron) chevron.style.transform = "rotate(0deg)";
         }
     };
 </script>

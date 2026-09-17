@@ -3,7 +3,7 @@ $pageTitle = 'History';
 $activeNav = 'history';
 
 require_once __DIR__ . '/../includes/auth.php';
-require_login();
+require_staff();
 
 try {
     $pdo = db();
@@ -38,9 +38,6 @@ $histPagination = buildPagination('hist', [
 
     <div class="section-header">
         <div class="section-title">Recent Activities</div>
-        <?php if (current_role() === 'super admin'): ?>
-            <button type="button" class="btn danger" onclick="deleteHistory()">Delete History</button>
-        <?php endif; ?>
     </div>
 
     <div class="toolbar-row"><?php echo $histToolbar; ?></div>

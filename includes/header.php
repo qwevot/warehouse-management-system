@@ -17,8 +17,12 @@ $initials = strtoupper(($words[0][0] ?? 'U') . ($words[1][0] ?? ''));
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo e($pageTitle); ?></title>
+    <meta name="csrf-token" content="<?php echo e(csrf_token()); ?>">
     <link rel="icon" type="image/svg+xml" href="<?php echo BASE_URL; ?>/favicon.svg">
     <link rel="stylesheet" href="<?php echo BASE_URL; ?>/css/style.css">
+    <script>
+        window.BASE_URL = <?php echo json_encode(BASE_URL); ?>;
+    </script>
 </head>
 <body>
 
@@ -44,14 +48,20 @@ $initials = strtoupper(($words[0][0] ?? 'U') . ($words[1][0] ?? ''));
 
             <div class="user-area">
 
-                <div class="user-avatar">
-                    <?php echo e($initials); ?>
-                </div>
+                <a href="<?php echo BASE_URL; ?>/pages/profile.php" class="user-profile-link" title="My Profile">
+                    <div class="user-avatar">
+                        <?php if (!empty($currentUser['avatar']) && is_file(__DIR__ . '/../' . $currentUser['avatar'])): ?>
+                            <img src="<?php echo BASE_URL . '/' . e($currentUser['avatar']); ?>" alt="<?php echo e($fullName); ?>">
+                        <?php else: ?>
+                            <?php echo e($initials); ?>
+                        <?php endif; ?>
+                    </div>
 
-                <div>
-                    <div class="user-name"><?php echo e($fullName); ?></div>
-                    <div class="user-role"><?php echo e($roleLabel); ?></div>
-                </div>
+                    <div>
+                        <div class="user-name"><?php echo e($fullName); ?></div>
+                        <div class="user-role"><?php echo e($roleLabel); ?></div>
+                    </div>
+                </a>
 
                 <a href="<?php echo BASE_URL; ?>/logout.php" class="logout-link">Log out</a>
 

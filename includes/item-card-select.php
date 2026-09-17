@@ -25,10 +25,6 @@
                 <div class="dt">Barcode</div>
                 <svg id="selCardBarcode" style="width:100%;"></svg>
             </div>
-            <div class="detail-box full">
-                <div class="dt">QR Code</div>
-                <div id="selCardQr"></div>
-            </div>
         </div>
 
     </div>

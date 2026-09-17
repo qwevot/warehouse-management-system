@@ -32,11 +32,10 @@ $inventorySortOptions = [
     ['modified-asc', 'Last Modified (Oldest)'],
 ];
 
-if ($mode === 'units') {
-    $axisPanelHtml = '
+$axisPanelHtml = '
 <div class="filter-panel-header">
-    <span class="filter-panel-title">Filter Units</span>
-    <button type="button" class="filter-close-btn" aria-label="Close">&times;</button>
+    <span class="filter-panel-title">' . ($mode === 'units' ? 'Filter Units' : 'Filter Options') . '</span>
+    <button type="button" class="filter-close-btn" id="filterCloseBtn" aria-label="Close">&times;</button>
 </div>
 <div class="filter-panel-content">
     <div class="filter-group">
@@ -53,56 +52,24 @@ if ($mode === 'units') {
             <option value="">All Locations</option>
             <option value="warehouse">In Warehouse</option>
             <option value="transit">In Transit</option>
+            <option value="office">Main Office</option>
             <option value="customer">Customer</option>
         </select>
+    </div>
+    <div class="filter-group">
+        <div class="filter-group-title">Date</div>
+        <div class="filter-options-chips" id="invDateChips">
+            <button type="button" class="filter-chip" data-date="today">Today</button>
+            <button type="button" class="filter-chip" data-date="week">Past Week</button>
+            <button type="button" class="filter-chip" data-date="month">Past Month</button>
+            <button type="button" class="filter-chip" data-date="all">All</button>
+        </div>
     </div>
 </div>
 <div class="filter-panel-footer">
     <button type="button" class="btn sm secondary" id="unitFilterResetBtn">Reset All</button>
     <button type="button" class="btn sm primary" id="unitFilterApplyBtn">Apply Filters</button>
 </div>';
-} else {
-    $axisPanelHtml = '
-<div class="filter-panel-header">
-    <span class="filter-panel-title">Filter Options</span>
-    <button type="button" class="filter-close-btn" onclick="document.getElementById(\'filterWrap\') && document.getElementById(\'filterWrap\').classList.remove(\'open\')" aria-label="Close">&times;</button>
-</div>
-<div class="filter-panel-content">
-    <div class="filter-group">
-        <div class="filter-group-title">Brand</div>
-        <input type="text" class="axis-input" data-axis="brand" placeholder="Search brand...">
-        <div class="axis-chips" data-chips="brand"></div>
-    </div>
-    <div class="filter-group">
-        <div class="filter-group-title">Location</div>
-        <div class="axis-location-grid">
-            <div class="axis-location-field">
-                <span class="axis-location-label">Shelf</span>
-                <input type="text" class="axis-input" data-axis="shelf" placeholder="e.g. A">
-            </div>
-            <div class="axis-location-field">
-                <span class="axis-location-label">Row</span>
-                <input type="text" class="axis-input" data-axis="row" placeholder="e.g. 1">
-            </div>
-            <div class="axis-location-field">
-                <span class="axis-location-label">Col</span>
-                <input type="text" class="axis-input" data-axis="col" placeholder="e.g. 2">
-            </div>
-        </div>
-        <div class="axis-chips" data-chips="shelf"></div>
-        <div class="axis-chips" data-chips="row"></div>
-        <div class="axis-chips" data-chips="col"></div>
-    </div>
-    <div class="filter-group">
-        <div class="filter-group-title">Date</div>
-        <div class="axis-chips" data-chips="created"></div>
-    </div>
-</div>
-<div class="filter-panel-footer">
-    <button type="button" class="btn sm secondary" onclick="window.clearInventoryFilters && window.clearInventoryFilters()">Reset All</button>
-    <button type="button" class="btn sm primary" onclick="document.getElementById(\'filterWrap\') && document.getElementById(\'filterWrap\').classList.remove(\'open\')">Apply Filters</button>
-</div>';
-}
 
 $inventoryToolbar = buildToolbar('', $inventorySortOptions, [
     'ids' => [

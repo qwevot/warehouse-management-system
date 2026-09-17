@@ -1,11 +1,33 @@
-# Block PHP execution inside the uploads folder
-<FilesMatch "\.(?i:php|phtml|php3|php4|php5)$">
+# ==============================================================================
+# Hardened Uploads Directory Security Guard
+# ==============================================================================
+
+# 1. Disable PHP Engine across all PHP version modules
+<IfModule mod_php.c>
+    php_flag engine off
+</IfModule>
+<IfModule mod_php7.c>
+    php_flag engine off
+</IfModule>
+<IfModule mod_php8.c>
+    php_flag engine off
+</IfModule>
+
+# 2. Strip script execution handlers for script extensions
+RemoveHandler .php .phtml .php3 .php4 .php5 .php7 .php8 .phar .cgi .pl .py .sh
+RemoveType .php .phtml .php3 .php4 .php5 .php7 .php8 .phar .cgi .pl .py .sh
+
+# 3. Deny direct access to all executable/script extensions
+<FilesMatch "(?i)\.(php|phtml|php3|php4|php5|php7|php8|phar|shtml|cgi|pl|py|sh|bat|exe|cmd|env|config)$">
     Require all denied
 </FilesMatch>
 
-# Cache uploaded images in the browser (filenames are stable, so caching is safe)
+# 4. Disable Directory Browsing and CGI execution
+Options -Indexes -ExecCGI
+
+# 5. Cache legitimate uploaded images in the browser
 <IfModule mod_headers.c>
-    <FilesMatch "\.(?i:jpg|jpeg|png|gif|webp)$">
+    <FilesMatch "(?i)\.(jpg|jpeg|png|gif|webp|svg|ico)$">
         Header set Cache-Control "public, max-age=31536000, immutable"
     </FilesMatch>
 </IfModule>

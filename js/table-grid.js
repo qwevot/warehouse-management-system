@@ -215,8 +215,97 @@
             renderTimer = setTimeout(() => render(resetPage), 80);
         }
 
+        let totalCount = (typeof window.INVENTORY_TOTAL === 'number') ? window.INVENTORY_TOTAL : 0;
+        let isInitialServerRender = true;
+
+        function updatePaginationControls(page, pageCount, total, pageRowsCount) {
+            if (pagePrev) pagePrev.disabled = page <= 1;
+            if (pageNext) pageNext.disabled = page >= pageCount;
+
+            if (pageNumbers) {
+                pageNumbers.innerHTML = "";
+                window.pageRange(page, pageCount).forEach((p) => {
+                    if (p === "...") {
+                        const s = document.createElement("span");
+                        s.className = "pg-ellipsis";
+                        s.textContent = "…";
+                        pageNumbers.appendChild(s);
+                    } else {
+                        const b = document.createElement("button");
+                        b.type = "button";
+                        b.className = "pg-btn pg-num" + (p === page ? " active" : "");
+                        b.textContent = p;
+                        b.onclick = () => { currentPage = p; render(false); };
+                        pageNumbers.appendChild(b);
+                    }
+                });
+            }
+
+            if (rangeEl) {
+                const start = (page - 1) * pageSize;
+                const from  = total === 0 ? 0 : start + 1;
+                const to    = start + pageRowsCount;
+                rangeEl.textContent = from + "-" + to + " of " + total;
+            }
+            if (pagination) pagination.style.display = "";
+        }
+
+        function fetchServerPage(resetPage) {
+            if (resetPage) currentPage = 1;
+
+            if (isInitialServerRender) {
+                isInitialServerRender = false;
+                totalCount = (typeof window.INVENTORY_TOTAL === 'number') ? window.INVENTORY_TOTAL : allRows().length;
+                const pageCount = Math.max(1, Math.ceil(totalCount / pageSize));
+                updatePaginationControls(currentPage, pageCount, totalCount, allRows().length);
+                updateBadge();
+                return;
+            }
+
+            const rawQuery = searchInput ? searchInput.value.trim() : "";
+            const sortVal  = (sortSelect && sortSelect.value) ? sortSelect.value : (currentSortKey ? (currentSortKey + (currentSortDir === 'asc' ? '-asc' : '-desc')) : 'newest');
+            const params = {
+                mode: window.INVENTORY_MODE || 'list',
+                page: currentPage,
+                size: pageSize,
+                q: rawQuery,
+                sort: sortVal
+            };
+            if (cfg.getFilterParams) {
+                Object.assign(params, cfg.getFilterParams());
+            }
+
+            if (tbody) tbody.style.opacity = '0.5';
+            window.post(cfg.ajaxUrl, params)
+                .then((r) => r.json())
+                .then((res) => {
+                    if (tbody) {
+                        tbody.style.opacity = '1';
+                        tbody.innerHTML = res.rows_html || '';
+                    }
+                    cachedRows = null;
+                    window.INVENTORY = res.rows || [];
+                    window.INVENTORY_TOTAL = res.total || 0;
+                    totalCount = res.total || 0;
+                    currentPage = res.page || 1;
+                    pageSize = res.size || 10;
+                    const pageCount = Math.max(1, Math.ceil(totalCount / pageSize));
+                    updatePaginationControls(currentPage, pageCount, totalCount, (res.rows || []).length);
+                    updateBadge();
+                })
+                .catch((err) => {
+                    if (tbody) tbody.style.opacity = '1';
+                    console.error('Server-side pagination error:', err);
+                });
+        }
+
         function render(resetPage) {
             if (resetPage) currentPage = 1;
+
+            if (cfg.ajaxUrl) {
+                fetchServerPage(resetPage);
+                return;
+            }
 
             const rawQuery = searchInput ? searchInput.value.trim() : "";
             const query = caseSensitive ? rawQuery : rawQuery.toLowerCase();
@@ -244,34 +333,7 @@
             });
             if (tbody) pageRows.forEach((tr) => tbody.appendChild(tr));
 
-            if (pagePrev) pagePrev.disabled = currentPage <= 1;
-            if (pageNext) pageNext.disabled = currentPage >= pageCount;
-
-            if (pageNumbers) {
-                pageNumbers.innerHTML = "";
-                window.pageRange(currentPage, pageCount).forEach((p) => {
-                    if (p === "...") {
-                        const s = document.createElement("span");
-                        s.className = "pg-ellipsis";
-                        s.textContent = "…";
-                        pageNumbers.appendChild(s);
-                    } else {
-                        const b = document.createElement("button");
-                        b.type = "button";
-                        b.className = "pg-btn pg-num" + (p === currentPage ? " active" : "");
-                        b.textContent = p;
-                        b.onclick = () => { currentPage = p; render(false); };
-                        pageNumbers.appendChild(b);
-                    }
-                });
-            }
-
-            if (rangeEl) {
-                const from = total === 0 ? 0 : start + 1;
-                const to   = start + pageRows.length;
-                rangeEl.textContent = from + "-" + to + " of " + total;
-            }
-            if (pagination) pagination.style.display = "";
+            updatePaginationControls(currentPage, pageCount, total, pageRows.length);
             updateBadge();
         }
 
@@ -369,26 +431,62 @@
         }
 
         function doExport(format) {
-            const rows = visibleData();
-            if (!rows.length) { alert("Nothing to export."); return; }
-            const cols = cfg.exportCols || [];
-            if (format === "csv") {
-                const lines = [cols.map((c) => c.label).join(",")].concat(
-                    rows.map((r) => cols.map((c) => window.csvEscape(r[c.key])).join(","))
-                );
-                window.downloadBlob(new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8;" }), cfg.exportName + ".csv");
-            } else if (format === "xlsx") {
-                const doXlsx = () => {
-                    const data = rows.map((r) => { const o = {}; cols.forEach((c) => o[c.label] = r[c.key]); return o; });
-                    const ws = XLSX.utils.json_to_sheet(data);
-                    ws["!cols"] = cols.map(() => ({ wch: 20 }));
-                    const wb = XLSX.utils.book_new();
-                    XLSX.utils.book_append_sheet(wb, ws, "Data");
-                    XLSX.writeFile(wb, cfg.exportName + ".xlsx");
+            const cols = cfg.exportCols || [
+                { key: 'name', label: 'Item Name' },
+                { key: 'brand', label: 'Brand' },
+                { key: 'quantity', label: 'Quantity' },
+                { key: 'serial', label: 'Serial' },
+                { key: 'barcode', label: 'Barcode' },
+                { key: 'location', label: 'Location' },
+                { key: 'status', label: 'Status' },
+                { key: 'created_at', label: 'Date Registered' },
+            ];
+            const performExport = (rows) => {
+                if (!rows.length) { alert("Nothing to export."); return; }
+                if (format === "csv") {
+                    const lines = [cols.map((c) => c.label).join(",")].concat(
+                        rows.map((r) => cols.map((c) => window.csvEscape(r[c.key])).join(","))
+                    );
+                    window.downloadBlob(new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8;" }), cfg.exportName + ".csv");
+                } else if (format === "xlsx") {
+                    const doXlsx = () => {
+                        const data = rows.map((r) => { const o = {}; cols.forEach((c) => o[c.label] = r[c.key]); return o; });
+                        const ws = XLSX.utils.json_to_sheet(data);
+                        ws["!cols"] = cols.map(() => ({ wch: 20 }));
+                        const wb = XLSX.utils.book_new();
+                        XLSX.utils.book_append_sheet(wb, ws, "Data");
+                        XLSX.writeFile(wb, cfg.exportName + ".xlsx");
+                    };
+                    if (window.XLSX) { doXlsx(); }
+                    else { ensureXlsx().then(doXlsx).catch(() => alert("Could not load the Excel exporter.")); }
+                }
+            };
+
+            if (cfg.ajaxUrl) {
+                const rawQuery = searchInput ? searchInput.value.trim() : "";
+                const sortVal  = (sortSelect && sortSelect.value) ? sortSelect.value : (currentSortKey ? (currentSortKey + (currentSortDir === 'asc' ? '-asc' : '-desc')) : 'newest');
+                const params = {
+                    mode: window.INVENTORY_MODE || 'list',
+                    format: 'all',
+                    q: rawQuery,
+                    sort: sortVal
                 };
-                if (window.XLSX) { doXlsx(); }
-                else { ensureXlsx().then(doXlsx).catch(() => alert("Could not load the Excel exporter.")); }
+                if (cfg.getFilterParams) {
+                    Object.assign(params, cfg.getFilterParams());
+                }
+                window.post(cfg.ajaxUrl, params)
+                    .then((r) => r.json())
+                    .then((res) => {
+                        performExport(res.rows || []);
+                    })
+                    .catch((err) => {
+                        console.error("Export error:", err);
+                        performExport(visibleData());
+                    });
+                return;
             }
+
+            performExport(visibleData());
         }
 
         if (cfg.exportFn) window[cfg.exportFn] = doExport;
@@ -452,14 +550,19 @@
 
         if (pageNext) {
             pageNext.addEventListener("click", () => {
-                const list = allRows();
-                const rawQuery = searchInput ? searchInput.value.trim() : "";
-                const query = caseSensitive ? rawQuery : rawQuery.toLowerCase();
-                const total = list.filter((tr) => {
-                    const text = tr._searchText !== undefined ? tr._searchText : (caseSensitive ? tr.textContent : tr.textContent.toLowerCase());
-                    return text.includes(query) && rowMatchesFilters(tr);
-                }).length;
-                const pageCount = Math.max(1, Math.ceil(total / pageSize));
+                let pageCount;
+                if (cfg.ajaxUrl) {
+                    pageCount = Math.max(1, Math.ceil(totalCount / pageSize));
+                } else {
+                    const list = allRows();
+                    const rawQuery = searchInput ? searchInput.value.trim() : "";
+                    const query = caseSensitive ? rawQuery : rawQuery.toLowerCase();
+                    const total = list.filter((tr) => {
+                        const text = tr._searchText !== undefined ? tr._searchText : (caseSensitive ? tr.textContent : tr.textContent.toLowerCase());
+                        return text.includes(query) && rowMatchesFilters(tr);
+                    }).length;
+                    pageCount = Math.max(1, Math.ceil(total / pageSize));
+                }
                 if (currentPage < pageCount) {
                     currentPage++;
                     render(false);
@@ -556,16 +659,30 @@
     window.initInventoryTable = function () {
         if (!document.getElementById("inventoryTable")) return;
 
-        const isUnitsMode = (window.INVENTORY_MODE === 'units');
         const selectedBrands = new Set();
         let brandSearchText = "";
         let selectedLocation = "";
+        let selectedDate = "all";
 
         window.clearInventoryFilters = function () {
+            selectedBrands.clear();
+            brandSearchText = "";
+            selectedLocation = "";
+            selectedDate = "all";
             const filterPanel = document.getElementById("filterPanel");
             if (filterPanel) {
                 filterPanel.querySelectorAll("input").forEach((i) => { i.value = ""; });
                 filterPanel.querySelectorAll(".filter-chip").forEach((c) => { c.classList.remove("active"); });
+                const brandChips = document.getElementById("unitBrandChips");
+                if (brandChips) brandChips.innerHTML = "";
+                const locSelect = document.getElementById("unitLocationFilterSelect");
+                if (locSelect) locSelect.value = "";
+                const dateChips = document.getElementById("invDateChips");
+                if (dateChips) {
+                    dateChips.querySelectorAll(".filter-chip").forEach((btn) => {
+                        btn.classList.remove("active");
+                    });
+                }
             }
             const searchInput = document.getElementById("searchInput");
             if (searchInput) {
@@ -582,15 +699,16 @@
             if (dep.startsWith("In Transit") || loc.startsWith("In Transit") || st === "in_transit") {
                 return "transit";
             }
+            if (dep === "Main Office" || loc === "Main Office") {
+                return "office";
+            }
             if (dep === "In Warehouse" || loc.startsWith("S") || loc === "In Warehouse") {
                 return "warehouse";
             }
             return "customer";
         }
 
-        function unitsRowMatch(tr) {
-            if (!isUnitsMode) return true;
-
+        function inventoryRowMatch(tr) {
             // Brand filter check
             if (selectedBrands.size > 0) {
                 const b = (tr.dataset.brand || "").trim();
@@ -606,12 +724,19 @@
                 if (cat !== selectedLocation) return false;
             }
 
+            // Date filter check
+            if (selectedDate && selectedDate !== "all") {
+                const createdTs = parseInt(tr.dataset.created, 10) || 0;
+                if (typeof window.createdBuckets === "function") {
+                    const buckets = window.createdBuckets(createdTs);
+                    if (!buckets.includes(selectedDate)) return false;
+                }
+            }
+
             return true;
         }
 
-        function unitsDataMatch(row) {
-            if (!isUnitsMode) return true;
-
+        function inventoryDataMatch(row) {
             if (selectedBrands.size > 0) {
                 const b = (row.brand || "").trim();
                 if (!selectedBrands.has(b)) return false;
@@ -626,33 +751,41 @@
                     const loc = (row.location || "").trim();
                     const st  = (row.status || "").toLowerCase().trim();
                     if (dep.startsWith("In Transit") || loc.startsWith("In Transit") || st === "in_transit") return "transit";
+                    if (dep === "Main Office" || loc === "Main Office") return "office";
                     if (dep === "In Warehouse" || loc.startsWith("S") || loc === "In Warehouse") return "warehouse";
                     return "customer";
                 })();
                 if (cat !== selectedLocation) return false;
             }
 
+            if (selectedDate && selectedDate !== "all") {
+                const createdTs = parseInt(row.created_ts, 10) || (row.created_at ? Math.floor(new Date(row.created_at).getTime() / 1000) : 0);
+                if (typeof window.createdBuckets === "function") {
+                    const buckets = window.createdBuckets(createdTs);
+                    if (!buckets.includes(selectedDate)) return false;
+                }
+            }
+
             return true;
         }
 
-        function unitsBadgeCount() {
-            if (!isUnitsMode) return 0;
+        function inventoryBadgeCount() {
             let count = selectedBrands.size + (brandSearchText ? 1 : 0);
             if (selectedLocation) count += 1;
+            if (selectedDate && selectedDate !== "all") count += 1;
             return count;
         }
 
-        function setupUnitsFilterControls(tableCtrl) {
-            if (!isUnitsMode) return;
-
+        function setupInventoryFilterControls(tableCtrl) {
             const brandInput     = document.getElementById("unitBrandFilterInput");
             const suggestBox     = document.getElementById("unitBrandSuggestBox");
             const chipsContainer = document.getElementById("unitBrandChips");
             const locationSelect = document.getElementById("unitLocationFilterSelect");
             const resetBtn       = document.getElementById("unitFilterResetBtn");
             const applyBtn       = document.getElementById("unitFilterApplyBtn");
-            const closeBtn       = document.querySelector("#filterPanel .filter-close-btn");
+            const closeBtn       = document.getElementById("filterCloseBtn") || document.querySelector("#filterPanel .filter-close-btn");
             const filterWrap     = document.getElementById("filterWrap");
+            const dateChipsWrap  = document.getElementById("invDateChips");
 
             const facetBrands = (window.INVENTORY_FACETS && Array.isArray(window.INVENTORY_FACETS.brand)) ? window.INVENTORY_FACETS.brand : [];
             const rowBrands   = tableCtrl.allRows().map((r) => (r.dataset.brand || "").trim()).filter(Boolean);
@@ -780,6 +913,23 @@
                 });
             }
 
+            if (dateChipsWrap) {
+                dateChipsWrap.querySelectorAll(".filter-chip").forEach((btn) => {
+                    btn.addEventListener("click", () => {
+                        const dateVal = btn.dataset.date || "all";
+                        if (btn.classList.contains("active")) {
+                            btn.classList.remove("active");
+                            selectedDate = "all";
+                        } else {
+                            dateChipsWrap.querySelectorAll(".filter-chip").forEach((c) => c.classList.remove("active"));
+                            btn.classList.add("active");
+                            selectedDate = dateVal;
+                        }
+                        tableCtrl.render(true);
+                    });
+                });
+            }
+
             if (resetBtn) {
                 resetBtn.addEventListener("click", () => {
                     selectedBrands.clear();
@@ -789,6 +939,12 @@
                     renderChips();
                     if (locationSelect) locationSelect.value = "";
                     selectedLocation = "";
+                    selectedDate = "all";
+                    if (dateChipsWrap) {
+                        dateChipsWrap.querySelectorAll(".filter-chip").forEach((btn) => {
+                            btn.classList.remove("active");
+                        });
+                    }
                     tableCtrl.render(true);
                 });
             }
@@ -817,6 +973,15 @@
         }
 
         window.initDataTable({
+            ajaxUrl:           BASE + '/actions/inventory-page.php',
+            getFilterParams:   function () {
+                const brands = Array.from(selectedBrands);
+                return {
+                    brand: brands.length > 0 ? brands : (brandSearchText ? [brandSearchText] : []),
+                    location: selectedLocation || '',
+                    date: selectedDate || 'all'
+                };
+            },
             searchInput:       '#searchInput',
             sortSelect:        '#sortSelect',
             tbody:             '#inventoryTable',
@@ -833,12 +998,22 @@
             pageSizeSelect:    '#pageSizeSelect',
             exportFn:          'exportTable',
             exportName:        'inventory',
+            exportCols: [
+                { key: 'name', label: 'Item Name' },
+                { key: 'brand', label: 'Brand' },
+                { key: 'quantity', label: 'Quantity' },
+                { key: 'serial', label: 'Serial' },
+                { key: 'barcode', label: 'Barcode' },
+                { key: 'location', label: 'Location' },
+                { key: 'status', label: 'Status' },
+                { key: 'created_at', label: 'Date Registered' },
+            ],
             defaultSortKey:    'newest',
             defaultSortDir:    'desc',
-            customFilterMatch: unitsRowMatch,
-            customDataMatch:   unitsDataMatch,
-            customBadgeCount:  unitsBadgeCount,
-            onInit:            setupUnitsFilterControls,
+            customFilterMatch: inventoryRowMatch,
+            customDataMatch:   inventoryDataMatch,
+            customBadgeCount:  inventoryBadgeCount,
+            onInit:            setupInventoryFilterControls,
             sorters: {
                 'newest': function (a, b) { return (parseInt(b.dataset.id, 10) || 0) - (parseInt(a.dataset.id, 10) || 0); },
                 'oldest': function (a, b) { return (parseInt(a.dataset.id, 10) || 0) - (parseInt(b.dataset.id, 10) || 0); },

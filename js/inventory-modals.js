@@ -320,19 +320,9 @@
     if (addForm) {
         addForm.addEventListener("submit", (e) => {
             const nameField = $("#product_name");
-            if (!nameField.value.trim()) {
+            if (!nameField || !nameField.value.trim()) {
                 e.preventDefault();
                 alert("Item name is required.");
-                return;
-            }
-            const items = window.MASTER_ITEMS;
-            if (items && items.length) {
-                const allowed = items.map((it) => (it.product_name || "").trim().toLowerCase());
-                if (!allowed.includes(nameField.value.trim().toLowerCase())) {
-                    e.preventDefault();
-                    alert("Please choose a product name from the list.");
-                    nameField.focus();
-                }
             }
         });
     }
@@ -376,12 +366,22 @@
         const box = $(cfg.box);
         if (!input || !box) return;
         const items = cfg.items || [];
-        if (!items.length) return;
-        const limit = cfg.limit || 8;
+        if (!cfg.ajaxType && (!cfg.items || !cfg.items.length)) return;
+        const limit = cfg.limit || 15;
+        let debounceTimer = null;
+        let activeFetchAbort = null;
 
-        function closeBox() { box.innerHTML = ""; box.style.display = "none"; }
+        function closeBox() { 
+            box.innerHTML = ""; 
+            box.style.display = "none"; 
+        }
+
         function render(list) {
             box.innerHTML = "";
+            if (!list || !list.length) {
+                box.style.display = "none";
+                return;
+            }
             list.forEach((it) => {
                 const d = document.createElement("div");
                 d.className = "suggest-item";
@@ -406,26 +406,51 @@
                 });
                 box.appendChild(d);
             });
-            box.style.display = list.length ? "block" : "none";
+            box.style.display = "block";
         }
-        function matches(q) {
-            return items.filter((it) => cfg.search(it).toLowerCase().includes(q)).slice(0, limit);
+
+        function query(q) {
+            if (cfg.ajaxType) {
+                if (activeFetchAbort) {
+                    activeFetchAbort.abort();
+                }
+                activeFetchAbort = new AbortController();
+                const baseUrl = window.BASE_URL || "/Inventory";
+                fetch(`${baseUrl}/actions/suggest.php?type=${encodeURIComponent(cfg.ajaxType)}&q=${encodeURIComponent(q)}&limit=${limit}`, {
+                    signal: activeFetchAbort.signal
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.ok && data.items) {
+                        render(data.items);
+                    } else {
+                        render([]);
+                    }
+                })
+                .catch(err => {
+                    if (err.name !== 'AbortError') render([]);
+                });
+            } else if (Array.isArray(cfg.items)) {
+                const list = q ? cfg.items.filter((it) => cfg.search(it).toLowerCase().includes(q)).slice(0, limit) : cfg.items.slice(0, limit);
+                render(list);
+            }
         }
 
         input.addEventListener("focus", () => {
             const q = input.value.trim().toLowerCase();
-            render(q ? matches(q) : items.slice(0, limit));
+            query(q);
         });
+
         input.addEventListener("input", () => {
             if (cfg.onInput) cfg.onInput();
             const q = input.value.trim().toLowerCase();
-            if (!q) {
-                render(items.slice(0, limit));
-                return;
-            }
-            render(matches(q));
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                query(q);
+            }, 180);
         });
-        input.addEventListener("blur", () => setTimeout(closeBox, 180));
+
+        input.addEventListener("blur", () => setTimeout(closeBox, 200));
         document.addEventListener("click", (e) => {
             if (!input.contains(e.target) && !box.contains(e.target)) closeBox();
         });
@@ -437,17 +462,27 @@
     initSuggest({
         input: "#stockItemSearch",
         box: "#stockSuggest",
-        items: window.STOCK_ITEMS,
+        ajaxType: "stock_items",
         label: (it) => it.name + (it.brand ? "  ·  " + it.brand : ""),
-        sub: (it) => (it.serial || "") + "  —  On hand: " + it.quantity,
-        search: (it) => (it.name || "") + " " + (it.brand || "") + " " + (it.serial || ""),
-        onInput: () => { const hidden = $("#stockItemId"); if (hidden) hidden.value = ""; },
+        sub: (it) => (it.barcode ? "Barcode: " + it.barcode + "  —  " : "") + "On hand: " + it.quantity,
+        onInput: () => {
+            const hidden = $("#stockItemId");
+            if (hidden) hidden.value = "";
+            const uHidden = $("#transferUnitId");
+            if (uHidden) uHidden.value = "";
+        },
         pick: (it) => {
             const hidden = $("#stockItemId");
             if (hidden) hidden.value = it.id;
+            const uHidden = $("#transferUnitId");
+            if (uHidden) uHidden.value = "";
             const input = $("#stockItemSearch");
             if (input) input.value = it.name + (it.brand ? "  (" + it.brand + ")" : "");
             if (window.showItemCard) window.showItemCard(it);
+            if (typeof wizardData !== 'undefined') {
+                wizardData.item_id = it.id;
+                if (typeof saveWizardDraft === 'function') saveWizardDraft();
+            }
         },
     });
 
@@ -455,16 +490,26 @@
     initSuggest({
         input: "#manualSerialInput",
         box: "#serialSuggestBox",
-        items: window.AVAILABLE_UNITS || [],
+        ajaxType: "available_units",
         limit: 30,
         label: (u) => u.serial,
         sub: (u) => (u.name || "") + (u.brand ? "  ·  " + u.brand : "") + (u.location ? "  —  " + u.location : ""),
-        search: (u) => (u.serial || "") + " " + (u.name || "") + " " + (u.brand || "") + " " + (u.location || ""),
         onInput: () => {
-            const snVal = ($("#manualSerialInput")?.value || "").trim().toLowerCase();
-            const exact = (window.AVAILABLE_UNITS || []).find((u) => u.serial && u.serial.toLowerCase() === snVal);
-            if (exact && window.selectUnitForStockOut) {
-                window.selectUnitForStockOut(exact);
+            const snVal = ($("#manualSerialInput")?.value || "").trim();
+            if (snVal && window.selectUnitForStockOut) {
+                const baseUrl = window.BASE_URL || "/Inventory";
+                fetch(`${baseUrl}/actions/suggest.php?type=available_units&q=${encodeURIComponent(snVal)}&limit=1`)
+                    .then(res => res.json())
+                    .then(data => {
+                        const exact = (data.items || []).find(u => u.serial && u.serial.toLowerCase() === snVal.toLowerCase());
+                        if (exact) {
+                            window.selectUnitForStockOut(exact);
+                        } else {
+                            const hiddenUnit = $("#stockUnitId");
+                            if (hiddenUnit) hiddenUnit.value = "";
+                        }
+                    })
+                    .catch(() => {});
             } else {
                 const hiddenUnit = $("#stockUnitId");
                 if (hiddenUnit) hiddenUnit.value = "";
@@ -481,12 +526,14 @@
     initSuggest({
         input: "#product_name",
         box: "#productSuggest",
-        items: window.MASTER_ITEMS,
+        ajaxType: "master",
         label: (it) => it.product_name + (it.brand ? "  ·  " + it.brand : ""),
-        search: (it) => (it.product_name || "") + " " + (it.brand || ""),
         pick: (it) => {
             const input = $("#product_name");
-            if (input) input.value = it.product_name;
+            if (input) {
+                input.value = it.product_name;
+                input.dataset.valid = it.product_name;
+            }
             const brandSelect = $("#brand");
             if (brandSelect) brandSelect.value = it.brand || "";
         },
@@ -496,9 +543,8 @@
     initSuggest({
         input: "#edit_item_name",
         box: "#editItemNameSuggest",
-        items: window.MASTER_ITEMS,
+        ajaxType: "master",
         label: (it) => it.product_name + (it.brand ? "  ·  " + it.brand : ""),
-        search: (it) => (it.product_name || "") + " " + (it.brand || ""),
         pick: (it) => {
             const input = $("#edit_item_name");
             if (input) {
@@ -514,73 +560,18 @@
     });
 
     // Brand autocomplete
-    const brandItems = (Array.isArray(window.BRANDS) ? window.BRANDS : []).filter(Boolean).map((name) => ({ name }));
     $all(".js-brand-suggest").forEach((input) => {
         const box = input.parentElement ? input.parentElement.querySelector(".suggest-box") : null;
-        if (!box || !brandItems.length) return;
+        if (!box) return;
         initSuggest({
             input: "#" + input.id,
             box: "#" + box.id,
-            items: brandItems,
-            limit: 50,
+            ajaxType: "brands",
+            limit: 30,
             label: (b) => b.name,
-            search: (b) => b.name,
             pick: (b) => { input.value = b.name; },
         });
     });
-
-    // Edit validation
-    const editItemNameEl = $("#edit_item_name");
-    if (editItemNameEl) {
-        editItemNameEl.addEventListener("change", () => {
-            const val = editItemNameEl.value.trim().toLowerCase();
-            const match = (window.MASTER_ITEMS || []).find((it) => it.product_name.toLowerCase() === val);
-            if (match) {
-                editItemNameEl.value = match.product_name;
-                editItemNameEl.dataset.valid = match.product_name;
-                if (match.brand && $("#edit_brand")) {
-                    $("#edit_brand").value = match.brand;
-                    $("#edit_brand").dataset.valid = match.brand;
-                }
-            } else {
-                editItemNameEl.value = editItemNameEl.dataset.valid || "";
-            }
-        });
-    }
-
-    const editBrandEl = $("#edit_brand");
-    if (editBrandEl) {
-        editBrandEl.addEventListener("change", () => {
-            const val = editBrandEl.value.trim().toLowerCase();
-            const allBrands = (Array.isArray(window.BRANDS) ? window.BRANDS : []);
-            const match = allBrands.find((b) => b.toLowerCase() === val);
-            if (match) {
-                editBrandEl.value = match;
-                editBrandEl.dataset.valid = match;
-            } else if (val === "") {
-                editBrandEl.value = "";
-                editBrandEl.dataset.valid = "";
-            } else {
-                editBrandEl.value = editBrandEl.dataset.valid || "";
-            }
-        });
-    }
-
-    const editFormEl = $("#editItemForm");
-    if (editFormEl) {
-        editFormEl.addEventListener("submit", (e) => {
-            const name = ($("#edit_item_name")?.value || "").trim();
-            const brand = ($("#edit_brand")?.value || "").trim();
-            const valid = (window.MASTER_ITEMS || []).some(
-                (it) => it.product_name.toLowerCase() === name.toLowerCase() && (it.brand || "").toLowerCase() === brand.toLowerCase()
-            );
-            if (!valid) {
-                e.preventDefault();
-                alert("Please select a valid Item Name and Brand from Master Data.");
-                return false;
-            }
-        });
-    }
 
     if (window.location.hash === "#add-item") {
         setCardVisible("add", true);

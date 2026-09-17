@@ -1,6 +1,7 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/../includes/auth.php';
 require_login_api();
+require_csrf_api();
 require_can_api('master.manage');
 
 $pdo  = json_db();
@@ -25,8 +26,10 @@ try {
             continue;
         }
 
-        if ($productCode === '') {
+        if ($productCode === '' || !preg_match('/^\d{1,4}$/', $productCode)) {
             $productCode = next_master_code($pdo);
+        } else {
+            $productCode = str_pad($productCode, 4, '0', STR_PAD_LEFT);
         }
 
         $chkCode = $pdo->prepare('SELECT id FROM master_items WHERE LOWER(product_code) = LOWER(?)');
@@ -55,8 +58,17 @@ try {
     }
 
     $pdo->commit();
+    log_activity('master_item.import', 'master_items', null, [
+        'count' => $count,
+        'source' => 'spreadsheet_import'
+    ], 'success');
     json_ok(['count' => $count, 'message' => "Successfully imported {$count} master item(s)."]);
 } catch (Exception $e) {
-    $pdo->rollBack();
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+    log_activity('master_item.import', 'master_items', null, [
+        'error' => $e->getMessage()
+    ], 'failure');
     json_fail('Import failed. No rows were added.');
 }

@@ -13,7 +13,7 @@
         <div class="form-grid">
 
             <div class="field full" id="mergeBarcodeWrap">
-                <label>New barcode number</label>
+                <span class="field-label" style="display:block; margin-bottom:6px; font-weight:600; font-size:13px; color:var(--text);">New barcode number</span>
                 <div class="barcode-auto-notice" style="display:flex; align-items:center; gap:8px; padding:10px 14px; background:#f8fafc; border:1px solid var(--border); border-radius:8px; font-size:13px; color:var(--text);">
                     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--blue); flex-shrink:0;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
                     <span>A new barcode number will be automatically generated as a brand-new inbound lot.</span>

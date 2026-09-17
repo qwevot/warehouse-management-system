@@ -1,6 +1,7 @@
 <div class="inventory-section add-panel" id="addBrandSection" style="display:none;">
 
     <form id="addBrandForm" action="<?php echo BASE_URL; ?>/actions/save-brand.php" method="POST">
+        <?php echo csrf_field(); ?>
 
         <div class="modal-header">
             <div class="modal-title">Add New Brand</div>

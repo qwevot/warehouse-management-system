@@ -11,7 +11,7 @@ $dbError = '';
 
 try {
     $pdo = db();
-    $users = $pdo->query('SELECT id, username, full_name, role, company, created_at FROM users ORDER BY id ASC')->fetchAll();
+    $users = $pdo->query('SELECT id, username, full_name, role, company, created_at FROM users ORDER BY id DESC')->fetchAll();
 } catch (Exception $e) {
     $dbError = 'Could not load users from the database.';
 }
@@ -152,6 +152,8 @@ $userPagination = buildPagination('user', ['pageSize' => 10]);
                     }, $roles))); ?>,
                 },
             ],
+            defaultSortKey: 'newest',
+            defaultSortDir: 'desc',
             sorters: {
                 'newest':   function (a, b) { return (parseInt(b.dataset.created, 10) || 0) - (parseInt(a.dataset.created, 10) || 0); },
                 'oldest':   function (a, b) { return (parseInt(a.dataset.created, 10) || 0) - (parseInt(b.dataset.created, 10) || 0); },
@@ -188,6 +190,7 @@ $userPagination = buildPagination('user', ['pageSize' => 10]);
 <!-- Add user modal -->
 <div class="modal-backdrop" id="addUserModal">
     <form method="POST" action="<?php echo BASE_URL; ?>/actions/save-user.php" class="modal">
+        <?php echo csrf_field(); ?>
         <div class="modal-header">
             <div class="modal-title">Add User</div>
             <button type="button" class="modal-close" onclick="closeAddUserModal()">×</button>
@@ -230,6 +233,7 @@ $userPagination = buildPagination('user', ['pageSize' => 10]);
 <!-- Edit user modal -->
 <div class="modal-backdrop" id="editUserModal">
     <form method="POST" action="<?php echo BASE_URL; ?>/actions/save-user.php" class="modal">
+        <?php echo csrf_field(); ?>
         <div class="modal-header">
             <div class="modal-title">Edit User</div>
             <button type="button" class="modal-close" onclick="closeEditUserModal()">×</button>

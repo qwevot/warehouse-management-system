@@ -12,12 +12,12 @@
             <div class="form-grid no-print">
 
                 <div class="field full">
-                    <label>Item</label>
+                    <span class="field-label" style="display:block; margin-bottom:6px; font-weight:600; font-size:13px; color:var(--text);">Item</span>
                     <div class="dd" id="genItemName">—</div>
                 </div>
 
                 <div class="field full">
-                    <label>Location</label>
+                    <span class="field-label" style="display:block; margin-bottom:6px; font-weight:600; font-size:13px; color:var(--text);">Location</span>
                     <div class="dd" id="genItemLocation">—</div>
                 </div>
 

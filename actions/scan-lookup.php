@@ -3,6 +3,7 @@
 // item. Barcodes are stored verbatim on the item; QR text embeds the serial.
 require_once __DIR__ . '/../includes/auth.php';
 require_login_api();
+require_csrf_api();
 require_once __DIR__ . '/../includes/functions.php';
 
 $code = trim($_POST['code'] ?? '');
@@ -20,6 +21,13 @@ if ($code === '') {
 $pdo = json_db();
 $unit = null;
 $item = null;
+$userRole = current_role();
+$isCustomer = ($userRole === 'customer');
+
+// If a customer attempts to scan a standalone EAN-13 LOT Barcode or barcode-only string, restrict
+if ($isCustomer && ((preg_match('/^\d{13}$/', $code) && ean13_valid($code)) || preg_match('/^BARCODE:\s*\d{13}$/i', $code))) {
+    json_fail('Barcode and LOT scanning is restricted to internal warehouse operations.');
+}
 
 // 1. Check if the scanned payload contains an explicit Unit Serial (SN: ... or SERIAL: ...) or starts with SN-
 $extractedSerial = null;
@@ -32,19 +40,19 @@ if (preg_match('/(?:SN|SERIAL):\s*([^\r\n]+)/i', $code, $m)) {
 if ($extractedSerial !== null) {
     $st = $pdo->prepare(
         "SELECT u.id AS unit_id, u.serial, u.qr AS unit_qr, u.status AS unit_status, u.created_at AS unit_created_at,
-                COALESCE(u.location, i.location, '') AS location,
-                i.id AS inventory_id, i.name, i.brand, i.quantity AS batch_quantity, i.barcode, i.photo, i.status AS batch_status
+                COALESCE(NULLIF(u.bin_location, ''), NULLIF(u.location, ''), u.deployment_site, '') AS location,
+                u.id AS inventory_id, mi.product_name AS name, mi.brand, 1 AS batch_quantity, u.barcode, COALESCE(u.photo, '') AS photo, u.status AS batch_status
            FROM inventory_units u
-           JOIN inventory_list i ON i.id = u.inventory_id
-          WHERE u.serial = ? AND u.deleted_at IS NULL AND i.deleted_at IS NULL
+           JOIN master_items mi ON mi.id = u.master_item_id
+          WHERE u.serial = ? AND u.deleted_at IS NULL
           LIMIT 1"
     );
     $st->execute([$extractedSerial]);
     $unit = $st->fetch() ?: null;
 }
 
-// 2. If not found by serial, check if it's an EAN-13 Barcode or embedded BARCODE: in text
-if ($unit === null) {
+// 2. If not found by serial, check if it's an EAN-13 Barcode or embedded BARCODE: in text (Staff only)
+if ($unit === null && !$isCustomer) {
     $extractedBarcode = null;
     if (preg_match('/^\d{13}$/', $code) && ean13_valid($code)) {
         $extractedBarcode = $code;
@@ -53,35 +61,51 @@ if ($unit === null) {
     }
 
     if ($extractedBarcode !== null) {
-        $st = $pdo->prepare("SELECT * FROM inventory_list WHERE barcode = ? AND deleted_at IS NULL LIMIT 1");
+        $st = $pdo->prepare("SELECT MIN(u.id) AS id, MIN(u.id) AS inventory_id, u.master_item_id, mi.product_name AS name, mi.brand AS brand,
+                                    COUNT(u.id) AS quantity, COUNT(u.id) AS batch_quantity, u.barcode,
+                                    COALESCE(MAX(NULLIF(u.photo, '')), '') AS photo, MAX(u.status) AS status, MAX(u.status) AS batch_status,
+                                    COALESCE(NULLIF(MAX(u.bin_location), ''), NULLIF(MAX(u.location), ''), MAX(u.deployment_site), '') AS location,
+                                    MIN(u.created_at) AS created_at, '' AS qr
+                             FROM inventory_units u 
+                             JOIN master_items mi ON mi.id = u.master_item_id 
+                             WHERE u.barcode = ? AND u.deleted_at IS NULL 
+                             GROUP BY u.barcode, u.master_item_id LIMIT 1");
         $st->execute([$extractedBarcode]);
         $item = $st->fetch() ?: null;
     }
 }
 
-// 3. Fallback: try raw exact match on unit serial first, then inventory barcode
+// 3. Fallback: try raw exact match on unit serial first, then inventory barcode (Staff only for barcode)
 if ($unit === null && $item === null) {
     $st = $pdo->prepare(
         "SELECT u.id AS unit_id, u.serial, u.qr AS unit_qr, u.status AS unit_status, u.created_at AS unit_created_at,
-                COALESCE(u.location, i.location, '') AS location,
-                i.id AS inventory_id, i.name, i.brand, i.quantity AS batch_quantity, i.barcode, i.photo, i.status AS batch_status
+                COALESCE(NULLIF(u.bin_location, ''), NULLIF(u.location, ''), u.deployment_site, '') AS location,
+                u.id AS inventory_id, u.master_item_id, mi.product_name AS name, mi.brand, 1 AS batch_quantity, u.barcode, COALESCE(u.photo, '') AS photo, u.status AS batch_status
            FROM inventory_units u
-           JOIN inventory_list i ON i.id = u.inventory_id
-          WHERE u.serial = ? AND u.deleted_at IS NULL AND i.deleted_at IS NULL
+           JOIN master_items mi ON mi.id = u.master_item_id
+          WHERE u.serial = ? AND u.deleted_at IS NULL
           LIMIT 1"
     );
     $st->execute([$code]);
     $unit = $st->fetch() ?: null;
 
-    if ($unit === null) {
-        $st = $pdo->prepare("SELECT * FROM inventory_list WHERE barcode = ? AND deleted_at IS NULL LIMIT 1");
+    if ($unit === null && !$isCustomer) {
+        $st = $pdo->prepare("SELECT MIN(u.id) AS id, MIN(u.id) AS inventory_id, u.master_item_id, mi.product_name AS name, mi.brand AS brand,
+                                    COUNT(u.id) AS quantity, COUNT(u.id) AS batch_quantity, u.barcode,
+                                    COALESCE(MAX(NULLIF(u.photo, '')), '') AS photo, MAX(u.status) AS status, MAX(u.status) AS batch_status,
+                                    COALESCE(NULLIF(MAX(u.bin_location), ''), NULLIF(MAX(u.location), ''), MAX(u.deployment_site), '') AS location,
+                                    MIN(u.created_at) AS created_at, '' AS qr
+                             FROM inventory_units u 
+                             JOIN master_items mi ON mi.id = u.master_item_id 
+                             WHERE u.barcode = ? AND u.deleted_at IS NULL 
+                             GROUP BY u.barcode, u.master_item_id LIMIT 1");
         $st->execute([$code]);
         $item = $st->fetch() ?: null;
     }
 }
 
 if ($unit === null && $item === null) {
-    json_fail('No matching unit or item was found for that code.');
+    json_fail($isCustomer ? 'No equipment matching that serial number or QR code was found.' : 'No matching unit or item was found for that code.');
 }
 
 if ($unit !== null) {
@@ -96,8 +120,8 @@ if ($unit !== null) {
             'quantity'       => 1,
             'batch_quantity' => (int)$unit['batch_quantity'],
             'location'       => $unit['location'] ?? '',
-            'barcode'        => $unit['barcode'] ?? '',
-            'qr'             => $unit['unit_qr'] ?: qr_for_unit($unit['serial'], $unit['barcode'] ?? '', $unit['name'], $unit['brand'] ?? '', $unit['location'] ?? ''),
+            'barcode'        => $isCustomer ? '' : ($unit['barcode'] ?? ''),
+            'qr'             => $unit['unit_qr'] ?: qr_for_unit($unit['serial'], $unit['barcode'] ?? '', $unit['name'], $unit['brand'] ?? ''),
             'status'         => $unit['unit_status'],
             'is_unit'        => true,
             'created_at'     => $unit['unit_created_at'],

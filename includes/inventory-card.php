@@ -45,10 +45,12 @@
                         <div id="detailQr"></div>
                     </div>
 
+                    <?php if (!function_exists('current_role') || current_role() !== 'customer'): ?>
                     <div class="detail-box full" data-print="barcode">
                         <div class="dt">Barcode</div>
                         <svg id="detailBarcode" style="width:100%;"></svg>
                     </div>
+                    <?php endif; ?>
 
                 </div>
 
@@ -57,7 +59,7 @@
         </div>
 
         <div class="modal-footer">
-            <button type="button" class="btn primary" style="margin-left:auto;" onclick="printScoped('both')">Print</button>
+            <button type="button" class="btn primary" style="margin-left:auto;" onclick="printScoped('<?php echo (function_exists('current_role') && current_role() === 'customer') ? 'qr' : 'both'; ?>')">Print</button>
         </div>
 
     </div>

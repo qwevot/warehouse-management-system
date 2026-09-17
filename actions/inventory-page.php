@@ -3,14 +3,15 @@
 // rendered HTML, plus the JSON payload for modals and pagination state.
 // With format=all it returns every matching row as JSON (no HTML) for export.
 require_once __DIR__ . '/../includes/auth.php';
-require_login_api();
+require_staff_api();
+require_csrf_api();
 
 require_once __DIR__ . '/../includes/inventory-data.php';
 
 $pdo = json_db();
 
 $mode = $_POST['mode'] ?? 'list';
-if (!in_array($mode, ['list', 'bin', 'generator', 'units'], true)) {
+if (!in_array($mode, ['list', 'bin', 'generator', 'units', 'stock-in', 'stock-out', 'transfers'], true)) {
     $mode = 'list';
 }
 

@@ -1,6 +1,7 @@
 <div class="inventory-section add-panel" id="addMasterItemSection" style="display:none;">
 
     <form id="addMasterItemForm" action="<?php echo BASE_URL; ?>/actions/save-master-item.php" method="POST">
+        <?php echo csrf_field(); ?>
 
         <div class="modal-header">
             <div class="modal-title">Add Master Item</div>
@@ -12,8 +13,8 @@
             <div class="form-grid">
 
                 <div class="field">
-                    <label for="product_code">Product Code</label>
-                    <input type="text" id="product_code" name="product_code" value="<?php echo e($nextProductCode ?? ''); ?>" placeholder="e.g. 0001" maxlength="4" disabled>
+                    <label for="product_code">Product Code (Numbers only)</label>
+                    <input type="text" id="product_code" name="product_code" value="<?php echo e($nextProductCode ?? ''); ?>" placeholder="e.g. 0001" maxlength="4" inputmode="numeric" pattern="\d{1,4}" oninput="this.value = this.value.replace(/\D/g, '').slice(0, 4)" title="4-digit number (e.g. 0001)" disabled>
                     <label class="manual-code-toggle" for="manualProductCode">
                         <input type="checkbox" id="manualProductCode" onclick="toggleProductCodeManual()">
                         Enter manually

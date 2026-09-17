@@ -2,12 +2,17 @@
 // PROCESS CHECK-IN: Updates custody location of an item or serialized unit.
 require_once __DIR__ . '/../includes/auth.php';
 require_login_api();
+require_csrf_api();
 require_once __DIR__ . '/../includes/functions.php';
 
 $pdo = json_db();
 $currentUser = current_user();
 $role = $currentUser['role'] ?? 'guest';
 $modifier = $currentUser['full_name'] ?: ($currentUser['username'] ?? 'User');
+
+if ($role === 'guest') {
+    json_fail('Guest accounts have read-only access and cannot perform check-ins.');
+}
 
 $inventoryId = (int)($_POST['inventory_id'] ?? 0);
 $unitId = (int)($_POST['unit_id'] ?? 0);
@@ -24,24 +29,30 @@ $item = null;
 $unit = null;
 
 if ($unitId > 0) {
-    $st = $pdo->prepare("SELECT u.*, i.name AS item_name, i.brand FROM inventory_units u JOIN inventory_list i ON i.id = u.inventory_id WHERE u.id = ? AND u.deleted_at IS NULL AND i.deleted_at IS NULL LIMIT 1");
+    $st = $pdo->prepare("SELECT u.*, mi.product_name AS item_name, mi.brand 
+                         FROM inventory_units u 
+                         JOIN master_items mi ON mi.id = u.master_item_id 
+                         WHERE u.id = ? AND u.deleted_at IS NULL LIMIT 1");
     $st->execute([$unitId]);
     $unit = $st->fetch();
     if (!$unit) {
         json_fail('The specified unit was not found.');
     }
-    $inventoryId = (int)$unit['inventory_id'];
+    $inventoryId = (int)$unit['id'];
     $itemName = $unit['item_name'];
     $unitSerial = $unit['serial'];
 } else {
-    $st = $pdo->prepare("SELECT * FROM inventory_list WHERE id = ? AND deleted_at IS NULL LIMIT 1");
+    $st = $pdo->prepare("SELECT u.*, mi.product_name AS name, mi.brand 
+                         FROM inventory_units u 
+                         JOIN master_items mi ON mi.id = u.master_item_id 
+                         WHERE u.id = ? AND u.deleted_at IS NULL LIMIT 1");
     $st->execute([$inventoryId]);
     $item = $st->fetch();
     if (!$item) {
         json_fail('The specified item was not found.');
     }
     $itemName = $item['name'];
-    $unitSerial = null;
+    $unitSerial = $item['serial'] ?? null;
 }
 
 // Determine final location based on role & destination
@@ -62,7 +73,10 @@ if ($role === 'customer') {
         $finalLocation = 'Main Office';
     } elseif ($destType === 'warehouse') {
         $bin = trim($_POST['bin_location'] ?? '');
-        $finalLocation = $bin !== '' ? $bin : 'In Warehouse';
+        if ($bin === '' || !preg_match('/^S\d{2}-R\d{2}-C\d{2}$/i', $bin)) {
+            json_fail('Please specify a valid Shelf Location with Shelf, Row, and Column (e.g. S01-R01-C01).');
+        }
+        $finalLocation = strtoupper($bin);
     } elseif ($destType === 'customer') {
         $company = trim($_POST['company'] ?? '');
         if ($company === '') {
@@ -102,20 +116,21 @@ try {
             $previousCat === 'customer' ||
             $previousLocation === 'Main Office'
         );
-        $movementType = $isReturningUnit ? 'return' : 'check_in';
+        $custodyType = ($role === 'customer' || $destType === 'customer') ? 'customer' : ($destType === 'office' ? 'office' : 'warehouse');
+        $custodyParams = [
+            'bin_location' => ($destType === 'warehouse') ? $targetBin : null,
+            'company'      => ($role === 'customer') ? $company : trim($_POST['company'] ?? ''),
+            'site'         => $siteInput,
+            'destination'  => $finalLocation,
+        ];
 
         // 1. Update ONLY this specific unit's location, bin_location, deployment_site, and status
-        $up = $pdo->prepare("UPDATE inventory_units SET location = ?, bin_location = ?, deployment_site = ?, status = 'available', updated_at = NOW(), modified_by = ? WHERE id = ?");
-        $up->execute([$finalLocation, $targetBin, $targetDeployment, $modifier, $unitId]);
+        set_unit_custody($pdo, $unitId, $custodyType, $custodyParams, $modifier);
 
         // 2. Recalculate parent lot's warehouse on-hand quantity (units physically available in the warehouse)
-        $pdo->prepare("UPDATE inventory_list SET quantity = (
-            SELECT COUNT(*) FROM inventory_units 
-            WHERE inventory_id = ? 
-              AND deleted_at IS NULL 
-              AND status = 'available' 
-              AND deployment_site = 'In Warehouse'
-        ), updated_at = NOW(), modified_by = ? WHERE id = ?")->execute([$inventoryId, $modifier, $inventoryId]);
+        sync_lot_quantity($pdo, $inventoryId, $modifier);
+
+        $movementType = $isReturningUnit ? 'return' : 'check_in';
 
         // Record movement history (RETURN or CHECK IN) for this specific unit
         $movementActionText = $isReturningUnit ? "Unit [{$unitSerial}] returned to warehouse at {$finalLocation}" : "Unit [{$unitSerial}] checked in to {$finalLocation}";
@@ -132,15 +147,27 @@ try {
         );
         $movementType = $isReturningLot ? 'return' : 'check_in';
 
-        // Batch-level check-in: update all active units belonging to this lot to the new location
-        $pdo->prepare("UPDATE inventory_units SET location = ?, bin_location = ?, deployment_site = ?, status = 'available', updated_at = NOW(), modified_by = ? WHERE inventory_id = ? AND deleted_at IS NULL")
-            ->execute([$finalLocation, $targetBin, $targetDeployment, $modifier, $inventoryId]);
+        $custodyType = ($role === 'customer' || $destType === 'customer') ? 'customer' : ($destType === 'office' ? 'office' : 'warehouse');
+        $custodyParams = [
+            'bin_location' => ($destType === 'warehouse') ? $targetBin : null,
+            'company'      => ($role === 'customer') ? $company : trim($_POST['company'] ?? ''),
+            'site'         => $siteInput,
+            'destination'  => $finalLocation,
+        ];
 
-        // If moving outside warehouse (customer site / office), warehouse lot on-hand quantity becomes 0
-        $newQty = $isMovingOutside ? 0 : (int)$item['quantity'];
-
-        $up = $pdo->prepare("UPDATE inventory_list SET location = ?, bin_location = ?, deployment_site = ?, quantity = ?, status = 'available', updated_at = NOW(), modified_by = ? WHERE id = ?");
-        $up->execute([$finalLocation, $targetBin, $targetDeployment, $newQty, $modifier, $inventoryId]);
+        // Batch / Unit level check-in: update the target unit/lot in inventory_units
+        $barcode = $item['barcode'] ?? null;
+        $masterItemId = $item['master_item_id'] ?? null;
+        if (!empty($barcode) && !empty($masterItemId)) {
+            $stUnits = $pdo->prepare("SELECT id FROM inventory_units WHERE barcode = ? AND master_item_id = ? AND deleted_at IS NULL");
+            $stUnits->execute([$barcode, $masterItemId]);
+            $uIds = $stUnits->fetchAll(PDO::FETCH_COLUMN);
+            if (!empty($uIds)) {
+                set_unit_custody($pdo, $uIds, $custodyType, $custodyParams, $modifier);
+            }
+        } else {
+            set_unit_custody($pdo, $inventoryId, $custodyType, $custodyParams, $modifier);
+        }
 
         // Record movement history (RETURN or CHECK IN)
         $movementActionText = $isReturningLot ? "Lot returned to warehouse at {$finalLocation}" : "Lot checked in to {$finalLocation}";
@@ -150,6 +177,14 @@ try {
     }
 
     $pdo->commit();
+
+    log_activity('movement.checkin', $unitId > 0 ? 'inventory_unit' : 'inventory_lot', $inventoryId, [
+        'item_name' => $itemName,
+        'serial' => $unitSerial,
+        'movement_type' => $movementType,
+        'final_location' => $finalLocation,
+        'notes' => $notes
+    ]);
 
     json_ok([
         'message'  => "Successfully checked in to {$finalLocation}",

@@ -9,8 +9,8 @@ $currentUser = current_user();
 $role = current_role();
 $company = trim((string)($currentUser['company'] ?? ''));
 
-// Restrict this page to customer role and internal staff (super admin, admin, engineer, technician)
-if ($role !== 'customer' && !in_array($role, ['super admin', 'admin', 'engineer', 'technician'], true)) {
+// Restrict this page to customer role, internal staff, and guest viewer
+if ($role !== 'customer' && !in_array($role, ['super admin', 'admin', 'engineer', 'technician', 'guest'], true)) {
     redirect_to('dashboard', 'error', 'Access denied.');
 }
 
@@ -23,7 +23,7 @@ $selectedCompany = trim((string)($_GET['company'] ?? ''));
 try {
     $pdo = db();
 
-    // Query units located at this customer's site(s)
+    // Query units located at this customer's site(s) or in transit to them
     if ($role === 'customer') {
         $selectedCompany = $company;
         if ($company === '') {
@@ -31,23 +31,28 @@ try {
         } else {
             $stmt = $pdo->prepare("
                 SELECT u.id, u.inventory_id, u.serial, u.qr, u.status, u.created_at, u.updated_at, u.modified_by,
-                       COALESCE(u.location, i.location, '') AS location,
-                       i.name, i.brand, i.photo, i.barcode, 1 AS quantity
+                       COALESCE(NULLIF(u.deployment_site, ''), u.location, '') AS location,
+                       u.bin_location, u.deployment_site,
+                       mi.product_name AS name, mi.brand AS brand, COALESCE(u.photo, '') AS photo, u.barcode, 1 AS quantity
                 FROM inventory_units u
-                JOIN inventory_list i ON i.id = u.inventory_id
+                JOIN master_items mi ON mi.id = u.master_item_id
                 WHERE u.deleted_at IS NULL 
-                  AND i.deleted_at IS NULL
-                  AND (u.location LIKE ? OR u.location = ?)
+                  AND (
+                      u.deployment_site LIKE ? OR u.deployment_site = ? 
+                      OR u.location LIKE ? OR u.location = ?
+                      OR u.deployment_site LIKE ? OR u.location LIKE ?
+                  )
                 ORDER BY u.id DESC
             ");
             $companyPattern = $company . ' - %';
-            $stmt->execute([$companyPattern, $company]);
+            $transitPattern = 'In Transit (' . $company . '%';
+            $stmt->execute([$companyPattern, $company, $companyPattern, $company, $transitPattern, $transitPattern]);
             $rows = $stmt->fetchAll();
             $total = count($rows);
         }
     } else {
         // Super admin / admin view:
-        // 1. Fetch distinct companies from users and deployed unit locations
+        // 1. Fetch distinct companies from users and deployed unit locations (including in-transit destinations)
         $userCompanies = $pdo->query("
             SELECT DISTINCT company 
             FROM users 
@@ -59,52 +64,61 @@ try {
             FROM inventory_units 
             WHERE deleted_at IS NULL 
               AND deployment_site NOT IN ('In Warehouse', 'Main Office')
-              AND deployment_site NOT LIKE 'In Transit%'
         ")->fetchAll(PDO::FETCH_COLUMN);
 
         $locCompanies = [];
         foreach ($locList as $l) {
-            $parts = explode(' - ', $l, 2);
-            if (!empty($parts[0])) {
-                $locCompanies[] = trim($parts[0]);
+            $lClean = trim((string)$l);
+            if (preg_match('/^In Transit \((.+?)(?: - [^\)]+)?\)$/i', $lClean, $m)) {
+                $locCompanies[] = trim($m[1]);
+            } else {
+                $parts = explode(' - ', $lClean, 2);
+                if (!empty($parts[0])) {
+                    $locCompanies[] = trim($parts[0]);
+                }
             }
         }
 
         $allCompanies = array_values(array_unique(array_filter(array_merge($userCompanies, $locCompanies))));
         sort($allCompanies, SORT_NATURAL | SORT_FLAG_CASE);
 
-        // 2. Query units: filtered by company if specified, or all customer-deployed units
+        // 2. Query units: filtered by company if specified, or all customer-deployed & in-transit units
         if ($selectedCompany !== '' && in_array($selectedCompany, $allCompanies, true)) {
             $stmt = $pdo->prepare("
                 SELECT u.id, u.inventory_id, u.serial, u.qr, u.status, u.created_at, u.updated_at, u.modified_by,
-                       COALESCE(NULLIF(u.deployment_site, ''), u.location, i.location, '') AS location,
+                       COALESCE(NULLIF(u.deployment_site, ''), u.location, '') AS location,
                        u.bin_location, u.deployment_site,
-                       i.name, i.brand, i.photo, i.barcode, 1 AS quantity
+                       mi.product_name AS name, mi.brand AS brand, COALESCE(u.photo, '') AS photo, u.barcode, 1 AS quantity
                 FROM inventory_units u
-                JOIN inventory_list i ON i.id = u.inventory_id
+                JOIN master_items mi ON mi.id = u.master_item_id
                 WHERE u.deleted_at IS NULL 
-                  AND i.deleted_at IS NULL
-                  AND (u.deployment_site LIKE ? OR u.deployment_site = ? OR u.location LIKE ? OR u.location = ?)
+                  AND (
+                      u.deployment_site LIKE ? OR u.deployment_site = ? 
+                      OR u.location LIKE ? OR u.location = ?
+                      OR u.deployment_site LIKE ? OR u.location LIKE ?
+                  )
                 ORDER BY u.id DESC
             ");
             $companyPattern = $selectedCompany . ' - %';
-            $stmt->execute([$companyPattern, $selectedCompany, $companyPattern, $selectedCompany]);
+            $transitPattern = 'In Transit (' . $selectedCompany . '%';
+            $stmt->execute([$companyPattern, $selectedCompany, $companyPattern, $selectedCompany, $transitPattern, $transitPattern]);
             $rows = $stmt->fetchAll();
             $total = count($rows);
         } else {
             $selectedCompany = '';
             $stmt = $pdo->query("
                 SELECT u.id, u.inventory_id, u.serial, u.qr, u.status, u.created_at, u.updated_at, u.modified_by,
-                       COALESCE(NULLIF(u.deployment_site, ''), u.location, i.location, '') AS location,
+                       COALESCE(NULLIF(u.deployment_site, ''), u.location, '') AS location,
                        u.bin_location, u.deployment_site,
-                       i.name, i.brand, i.photo, i.barcode, 1 AS quantity
+                       mi.product_name AS name, mi.brand AS brand, COALESCE(u.photo, '') AS photo, u.barcode, 1 AS quantity
                 FROM inventory_units u
-                JOIN inventory_list i ON i.id = u.inventory_id
+                JOIN master_items mi ON mi.id = u.master_item_id
                 WHERE u.deleted_at IS NULL 
-                  AND i.deleted_at IS NULL
                   AND (
-                      (u.deployment_site NOT IN ('In Warehouse', 'Main Office') AND u.deployment_site NOT LIKE 'In Transit%' AND u.deployment_site LIKE '% - %')
-                      OR (u.location LIKE '% - %' AND u.location <> 'Main Office' AND u.location NOT LIKE 'In Transit%')
+                      (u.deployment_site NOT IN ('In Warehouse', 'Main Office') AND u.deployment_site LIKE '% - %')
+                      OR (u.location LIKE '% - %' AND u.location <> 'Main Office')
+                      OR u.deployment_site LIKE 'In Transit%'
+                      OR u.location LIKE 'In Transit%'
                   )
                 ORDER BY u.id DESC
             ");
@@ -180,7 +194,9 @@ $assetPagination = buildPagination('asset', ['pageSize' => 10]);
                     <th>Location / Site</th>
                     <th>Status</th>
                     <th>Serial No.</th>
-                    <th>Barcode No.</th>
+                    <?php if ($role !== 'customer'): ?>
+                        <th>Barcode No.</th>
+                    <?php endif; ?>
                     <th class="sortable" data-sort="date" data-default-dir="desc" title="Sort by Date">
                         <div class="th-sort-inner">
                             <span>Deployed Date</span>
@@ -194,7 +210,7 @@ $assetPagination = buildPagination('asset', ['pageSize' => 10]);
             </thead>
             <tbody id="assetBody">
                 <?php if (empty($rows)): ?>
-                    <tr><td colspan="11" style="text-align:center; color:#9ca3af; padding:40px;">No deployed equipment found.</td></tr>
+                    <tr><td colspan="<?php echo $role === 'customer' ? '10' : '11'; ?>" style="text-align:center; color:#9ca3af; padding:40px;">No deployed equipment found.</td></tr>
                 <?php else: ?>
                     <?php foreach ($rows as $i => $item): ?>
                         <tr class="asset-row" 
@@ -223,16 +239,28 @@ $assetPagination = buildPagination('asset', ['pageSize' => 10]);
                             <td><?php echo dash($item['brand']); ?></td>
                             <td><span class="location"><?php echo e($item['location']); ?></span></td>
                             <td>
-                                     <?php
-                                     $isInactive = (!empty($item['deleted_at']) || in_array(strtolower((string)$item['status']), ['inactive', 'taken'], true));
-                                     $stLabel = $isInactive ? 'INACTIVE' : 'ACTIVE';
-                                     $stClass = $isInactive ? 'inactive' : 'available';
-                                     ?>
-                                     <span class="status <?php echo $stClass; ?>">
-                                         <?php echo $stLabel; ?>
-                                     </span>
+                                <?php
+                                $locStr = (string)$item['location'];
+                                $depStr = (string)($item['deployment_site'] ?? '');
+                                $isTransit = str_starts_with($locStr, 'In Transit') || str_starts_with($depStr, 'In Transit') || $item['status'] === 'in_transit';
+                                $isInactive = (!empty($item['deleted_at']) || in_array(strtolower((string)$item['status']), ['inactive', 'taken'], true));
+                                if ($isTransit) {
+                                    $stLabel = 'IN TRANSIT';
+                                    $stClass = 'in_transit';
+                                } elseif ($isInactive) {
+                                    $stLabel = 'INACTIVE';
+                                    $stClass = 'inactive';
+                                } else {
+                                    $stLabel = 'ACTIVE';
+                                    $stClass = 'available';
+                                }
+                                ?>
+                                <span class="status <?php echo $stClass; ?>">
+                                    <?php echo $stLabel; ?>
+                                </span>
                             </td>
                             <td><span class="serial"><?php echo e($item['serial']); ?></span></td>
+                            <?php if ($role !== 'customer'): ?>
                             <td>
                                 <?php if (!empty($item['barcode'])): ?>
                                     <span class="serial" style="font-size:11px;"><?php echo e($item['barcode']); ?></span>
@@ -240,6 +268,7 @@ $assetPagination = buildPagination('asset', ['pageSize' => 10]);
                                     <span class="dash">—</span>
                                 <?php endif; ?>
                             </td>
+                            <?php endif; ?>
                             <td><span class="registered-on"><?php echo e(fmt_datetime($item['created_at'])); ?></span></td>
                             <td><span class="registered-on"><?php echo !empty($item['updated_at']) ? e(fmt_datetime($item['updated_at'])) : '—'; ?></span></td>
                         </tr>
@@ -256,7 +285,10 @@ $assetPagination = buildPagination('asset', ['pageSize' => 10]);
 <?php include __DIR__ . '/../includes/inventory-card.php'; ?>
 
 <script>
-    window.ASSET_DATA = <?php echo json_encode(array_map(function ($it) {
+    window.ASSET_DATA = <?php echo json_encode(array_map(function ($it) use ($role) {
+        $locStr = (string)$it['location'];
+        $depStr = (string)($it['deployment_site'] ?? '');
+        $isTransit = str_starts_with($locStr, 'In Transit') || str_starts_with($depStr, 'In Transit') || $it['status'] === 'in_transit';
         return [
             'id'          => (int)$it['id'],
             'serial'      => $it['serial'],
@@ -264,10 +296,11 @@ $assetPagination = buildPagination('asset', ['pageSize' => 10]);
             'brand'       => $it['brand'],
             'quantity'    => 1,
             'location'    => $it['location'],
-            'barcode'     => $it['barcode'] ?? '',
+            'barcode'     => ($role === 'customer') ? '' : ($it['barcode'] ?? ''),
             'qr'          => $it['qr'] ?? '',
             'photo'       => !empty($it['photo']) ? BASE_URL . '/' . $it['photo'] : '',
-            'status'      => $it['status'],
+            'status'      => $isTransit ? 'in_transit' : $it['status'],
+            'is_transit'  => $isTransit,
             'created_at'  => $it['created_at'] ? date('Y-m-d H:i', strtotime($it['created_at'])) : '',
             'created_ts'  => $it['created_at'] ? (int)strtotime($it['created_at']) : 0,
             'updated_at'  => !empty($it['updated_at']) ? date('Y-m-d H:i', strtotime($it['updated_at'])) : '',
@@ -317,8 +350,9 @@ $assetPagination = buildPagination('asset', ['pageSize' => 10]);
                     key: 'status',
                     dataValue: (r) => r.status,
                     options: [
-                        { value: 'available',  label: 'Active' },
-                        { value: 'taken',      label: 'Inactive' },
+                        { value: 'available',   label: 'Active' },
+                        { value: 'in_transit',  label: 'In Transit' },
+                        { value: 'taken',       label: 'Inactive' },
                     ],
                 },
             ],

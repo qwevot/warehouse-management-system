@@ -3,7 +3,7 @@ $pageTitle = 'Master Bin';
 $activeNav = 'master-bin';
 
 require_once __DIR__ . '/../includes/auth.php';
-require_login();
+require_staff();
 
 $binnedBrands = [];
 $binnedItems  = [];
@@ -11,8 +11,23 @@ $dbError = '';
 
 try {
     $pdo = db();
-    $binnedBrands = $pdo->query("SELECT id, name, updated_at, modified_by, deleted_at FROM master_brands WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC")->fetchAll();
-    $binnedItems  = $pdo->query("SELECT id, product_code, product_name, brand, product_class, updated_at, modified_by, deleted_at FROM master_items WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC")->fetchAll();
+    $binnedBrands = $pdo->query("
+        SELECT b.id, b.name, b.updated_at, b.modified_by, b.deleted_at,
+               (SELECT COUNT(*) FROM inventory_units u 
+                JOIN master_items mi ON mi.id = u.master_item_id 
+                WHERE mi.brand = b.name AND u.deleted_at IS NOT NULL) AS binned_units
+        FROM master_brands b 
+        WHERE b.deleted_at IS NOT NULL 
+        ORDER BY b.deleted_at DESC
+    ")->fetchAll();
+    $binnedItems = $pdo->query("
+        SELECT mi.id, mi.product_code, mi.product_name, mi.brand, mi.product_class, mi.updated_at, mi.modified_by, mi.deleted_at,
+               (SELECT COUNT(*) FROM inventory_units u 
+                WHERE u.master_item_id = mi.id AND u.deleted_at IS NOT NULL) AS binned_units
+        FROM master_items mi 
+        WHERE mi.deleted_at IS NOT NULL 
+        ORDER BY mi.deleted_at DESC
+    ")->fetchAll();
 } catch (Exception $e) {
     $dbError = 'Could not load the master bin from the database.';
 }
@@ -23,6 +38,8 @@ require_once __DIR__ . '/../includes/data-toolbar.php';
 require_once __DIR__ . '/../includes/data-pagination.php';
 
 $binBrandSortOptions = [
+    ['date-desc', 'Binned Date (Newest)'],
+    ['date-asc',  'Binned Date (Oldest)'],
     ['name-asc',  'Name (A–Z)'],
     ['name-desc', 'Name (Z–A)'],
 ];
@@ -32,6 +49,8 @@ $binBrandPagination = buildPagination('binBrand', [
 ]);
 
 $binItemSortOptions = [
+    ['date-desc',   'Binned Date (Newest)'],
+    ['date-asc',    'Binned Date (Oldest)'],
     ['code-asc',    'Code (A–Z)'],
     ['code-desc',   'Code (Z–A)'],
     ['name-asc',    'Name (A–Z)'],
@@ -69,7 +88,14 @@ $deleteIcon  = icon_delete();
                     <th>No.</th>
                     <th class="action-col">Action</th>
                     <th>Brand</th>
-                    <th>Binned At</th>
+                    <th class="sortable" data-sort="date" data-default-dir="desc" title="Sort by Binned Date">
+                        <div class="th-sort-inner">
+                            <span>Binned At</span>
+                            <svg class="sort-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </div>
+                    </th>
                     <th>Modified By</th>
                 </tr>
             </thead>
@@ -86,18 +112,16 @@ $deleteIcon  = icon_delete();
                             <td class="no-col"><?php echo $i + 1; ?></td>
                             <td>
                                 <div class="row-actions">
-                                    <?php if (user_can('master.manage')): ?>
-                                    <form method="POST" action="<?php echo BASE_URL; ?>/actions/restore-brand.php" style="display:inline;">
-                                        <input type="hidden" name="id" value="<?php echo (int)$b['id']; ?>">
-                                        <button type="submit" class="btn icon-btn restore" title="Restore"><?php echo $restoreIcon; ?></button>
-                                    </form>
-                                    <?php endif; ?>
-                                    <?php if (user_can('permanent_delete')): ?>
-                                    <form method="POST" action="<?php echo BASE_URL; ?>/actions/delete-brand-permanent.php" style="display:inline;">
-                                        <input type="hidden" name="id" value="<?php echo (int)$b['id']; ?>">
-                                        <button type="submit" class="btn icon-btn delete" title="Permanently Delete" onclick="return confirm('Permanently delete this brand? This cannot be undone.')"><?php echo $deleteIcon; ?></button>
-                                    </form>
-                                    <?php endif; ?>
+                                      <?php if (user_can('master.manage')): ?>
+                                      <button type="button" class="btn icon-btn restore" title="Restore" onclick="handleRestoreBrand(<?php echo (int)$b['id']; ?>, <?php echo e(json_encode($b['name'])); ?>, <?php echo (int)($b['binned_units'] ?? 0); ?>)"><?php echo $restoreIcon; ?></button>
+                                      <?php endif; ?>
+                                     <?php if (user_can('permanent_delete')): ?>
+                                     <form method="POST" action="<?php echo BASE_URL; ?>/actions/delete-brand-permanent.php" style="display:inline;">
+                                         <?php echo csrf_field(); ?>
+                                         <input type="hidden" name="id" value="<?php echo (int)$b['id']; ?>">
+                                         <button type="submit" class="btn icon-btn delete" title="Permanently Delete" onclick="return confirm('Permanently delete this brand? This cannot be undone.')"><?php echo $deleteIcon; ?></button>
+                                     </form>
+                                     <?php endif; ?>
                                 </div>
                             </td>
                             <td><?php echo e($b['name']); ?></td>
@@ -132,7 +156,14 @@ $deleteIcon  = icon_delete();
                     <th>Product Name</th>
                     <th>Brand</th>
                     <th>Product Class</th>
-                    <th>Binned At</th>
+                    <th class="sortable" data-sort="date" data-default-dir="desc" title="Sort by Binned Date">
+                        <div class="th-sort-inner">
+                            <span>Binned At</span>
+                            <svg class="sort-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </div>
+                    </th>
                     <th>Modified By</th>
                 </tr>
             </thead>
@@ -149,18 +180,16 @@ $deleteIcon  = icon_delete();
                             <td class="no-col"><?php echo $i + 1; ?></td>
                             <td>
                                 <div class="row-actions">
-                                    <?php if (user_can('master.manage')): ?>
-                                    <form method="POST" action="<?php echo BASE_URL; ?>/actions/restore-master-item.php" style="display:inline;">
-                                        <input type="hidden" name="id" value="<?php echo (int)$it['id']; ?>">
-                                        <button type="submit" class="btn icon-btn restore" title="Restore"><?php echo $restoreIcon; ?></button>
-                                    </form>
-                                    <?php endif; ?>
-                                    <?php if (user_can('permanent_delete')): ?>
-                                    <form method="POST" action="<?php echo BASE_URL; ?>/actions/delete-master-item-permanent.php" style="display:inline;">
-                                        <input type="hidden" name="id" value="<?php echo (int)$it['id']; ?>">
-                                        <button type="submit" class="btn icon-btn delete" title="Permanently Delete" onclick="return confirm('Permanently delete this master item? This cannot be undone.')"><?php echo $deleteIcon; ?></button>
-                                    </form>
-                                    <?php endif; ?>
+                                      <?php if (user_can('master.manage')): ?>
+                                      <button type="button" class="btn icon-btn restore" title="Restore" onclick="handleRestoreItem(<?php echo (int)$it['id']; ?>, <?php echo e(json_encode($it['product_name'])); ?>, <?php echo (int)($it['binned_units'] ?? 0); ?>)"><?php echo $restoreIcon; ?></button>
+                                      <?php endif; ?>
+                                     <?php if (user_can('permanent_delete')): ?>
+                                     <form method="POST" action="<?php echo BASE_URL; ?>/actions/delete-master-item-permanent.php" style="display:inline;">
+                                         <?php echo csrf_field(); ?>
+                                         <input type="hidden" name="id" value="<?php echo (int)$it['id']; ?>">
+                                         <button type="submit" class="btn icon-btn delete" title="Permanently Delete" onclick="return confirm('Permanently delete this master item? This cannot be undone.')"><?php echo $deleteIcon; ?></button>
+                                     </form>
+                                     <?php endif; ?>
                                 </div>
                             </td>
                             <td><?php echo e($it['product_code']); ?></td>
@@ -209,10 +238,44 @@ window.BIN_ITEM_DATA = <?php echo json_encode(array_map(function($it) {
     ];
 }, $binnedItems)); ?>;
 
-    function deleteAllBinnedMaster() {
+    function handleRestoreBrand(id, name, binnedUnits) {
+        if (binnedUnits > 0) {
+            const restoreItems = confirm(
+                "Brand \"" + name + "\" has " + binnedUnits + " associated item/unit(s) in the bin.\n\n" +
+                "Click OK to restore the brand AND all its " + binnedUnits + " item(s).\n" +
+                "Click Cancel if you want to restore ONLY the brand definition."
+            );
+            window.submitPostForm("<?php echo BASE_URL; ?>/actions/restore-brand.php", {
+                id: id,
+                restore_units: restoreItems ? 1 : 0
+            });
+        } else {
+            if (!confirm("Restore brand \"" + name + "\"?")) return;
+            window.submitPostForm("<?php echo BASE_URL; ?>/actions/restore-brand.php", { id: id, restore_units: 0 });
+        }
+    }
+
+    function handleRestoreItem(id, name, binnedUnits) {
+        if (binnedUnits > 0) {
+            const restoreUnits = confirm(
+                "Master item \"" + name + "\" has " + binnedUnits + " inventory unit(s) in the bin.\n\n" +
+                "Click OK to restore the master item AND all " + binnedUnits + " unit(s).\n" +
+                "Click Cancel if you want to restore ONLY the master item definition."
+            );
+            window.submitPostForm("<?php echo BASE_URL; ?>/actions/restore-master-item.php", {
+                id: id,
+                restore_units: restoreUnits ? 1 : 0
+            });
+        } else {
+            if (!confirm("Restore master item \"" + name + "\"?")) return;
+            window.submitPostForm("<?php echo BASE_URL; ?>/actions/restore-master-item.php", { id: id, restore_units: 0 });
+        }
+    }
+
+    window.deleteAllBinnedMaster = function () {
         if (!confirm("Are you sure you want to permanently delete ALL binned master items and brands? This operation cannot be undone.")) return;
         window.submitPostForm("<?php echo BASE_URL; ?>/actions/clear-master-bin.php", {});
-    }
+    };
 
     document.addEventListener("DOMContentLoaded", function () {
 initDataTable({
@@ -251,7 +314,11 @@ initDataTable({
             ],
         },
     ],
+    defaultSortKey: 'date',
+    defaultSortDir: 'desc',
     sorters: {
+        'date-desc': function(a,b) { return (parseInt(b.dataset.deleted, 10) || 0) - (parseInt(a.dataset.deleted, 10) || 0); },
+        'date-asc':  function(a,b) { return (parseInt(a.dataset.deleted, 10) || 0) - (parseInt(b.dataset.deleted, 10) || 0); },
         'name-asc':  function(a,b) { return a.dataset.name.localeCompare(b.dataset.name); },
         'name-desc': function(a,b) { return b.dataset.name.localeCompare(a.dataset.name); },
     },
@@ -316,7 +383,11 @@ initDataTable({
             ],
         },
     ],
+    defaultSortKey: 'date',
+    defaultSortDir: 'desc',
     sorters: {
+        'date-desc':   function(a,b) { return (parseInt(b.dataset.binnedTs, 10) || 0) - (parseInt(a.dataset.binnedTs, 10) || 0); },
+        'date-asc':    function(a,b) { return (parseInt(a.dataset.binnedTs, 10) || 0) - (parseInt(b.dataset.binnedTs, 10) || 0); },
         'code-asc':    function(a,b) { return a.dataset.code.localeCompare(b.dataset.code); },
         'code-desc':   function(a,b) { return b.dataset.code.localeCompare(a.dataset.code); },
         'name-asc':    function(a,b) { return a.dataset.name.localeCompare(b.dataset.name); },

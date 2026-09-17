@@ -5,7 +5,7 @@ $activeNav = 'barcode';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/inventory-data.php';
 
-require_login();
+require_staff();
 
 $mode   = 'generator';
 $state  = inventory_state_from_request();

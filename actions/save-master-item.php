@@ -4,6 +4,7 @@
 require_once __DIR__ . '/../includes/auth.php';
 require_login();
 require_can('master.manage');
+require_csrf('items');
 
 $pdo = html_db('items');
 
@@ -13,13 +14,24 @@ $productName   = trim($_POST['product_name'] ?? '');
 $brand         = trim($_POST['brand'] ?? '');
 $productClass  = trim($_POST['product_class'] ?? '');
 
-// Auto-generate a 4-digit code when the user leaves the field blank.
+// Auto-generate a 4-digit code when the user leaves the field blank; otherwise enforce numeric 1-4 digits.
 if ($productCode === '') {
     $productCode = next_master_code($pdo);
+} elseif (!preg_match('/^\d{1,4}$/', $productCode)) {
+    redirect_to('items', 'error', 'Product code must contain only numbers (up to 4 digits, e.g. 0001).');
+} else {
+    $productCode = str_pad($productCode, 4, '0', STR_PAD_LEFT);
 }
 
 if ($productName === '' || $brand === '') {
     redirect_to('items', 'error', 'Product name and brand are required.');
+}
+
+// Ensure the chosen brand exists in master_brands
+$stBrand = $pdo->prepare('SELECT id FROM master_brands WHERE name = ? AND deleted_at IS NULL LIMIT 1');
+$stBrand->execute([$brand]);
+if (!$stBrand->fetch()) {
+    redirect_to('items', 'error', 'Please select an existing brand from the list.');
 }
 
 // Guard against duplicate product codes (case-insensitive).
@@ -43,12 +55,24 @@ if ($id > 0) {
         'UPDATE master_items SET product_code = ?, product_name = ?, brand = ?, product_class = ?, updated_at = NOW(), modified_by = ? WHERE id = ?'
     )->execute([$productCode, $productName, $brand, $productClass, $modifiedBy, $id]);
     $targetItemId = $id;
+    log_activity('master_item.edit', 'master_item', $id, [
+        'product_code' => $productCode,
+        'product_name' => $productName,
+        'brand' => $brand,
+        'product_class' => $productClass
+    ]);
     $message = 'Master item "' . $productName . '" updated.';
 } else {
     $pdo->prepare(
         'INSERT INTO master_items (product_code, product_name, brand, product_class, updated_at, modified_by) VALUES (?, ?, ?, ?, NOW(), ?)'
     )->execute([$productCode, $productName, $brand, $productClass, $modifiedBy]);
     $targetItemId = (int)$pdo->lastInsertId();
+    log_activity('master_item.create', 'master_item', $targetItemId, [
+        'product_code' => $productCode,
+        'product_name' => $productName,
+        'brand' => $brand,
+        'product_class' => $productClass
+    ]);
     $message = 'Master item "' . $productName . '" added.';
 }
 

@@ -105,12 +105,40 @@
 
         let scanFrames = 0;
 
-        const scanner = new Html5Qrcode("scanReader");
+        // Enable native hardware BarcodeDetector if available for instant 1D barcode scanning
+        const scanner = new Html5Qrcode("scanReader", {
+            experimentalFeatures: {
+                useBarCodeDetectorIfSupported: true
+            }
+        });
+
+        const isCustomerRole = <?php echo (function_exists('current_role') && current_role() === 'customer') ? 'true' : 'false'; ?>;
+
+        // Calculate a responsive scanning box: square for customers (QR-focused), rectangular for staff (1D barcode focused)
+        const qrboxFunction = function (viewfinderWidth, viewfinderHeight) {
+            const minDim = Math.min(viewfinderWidth, viewfinderHeight);
+            if (isCustomerRole) {
+                // Square scanning box optimized for QR codes
+                const sqEdge = Math.max(180, Math.floor(minDim * 0.70));
+                return {
+                    width: Math.min(sqEdge, viewfinderWidth - 10),
+                    height: Math.min(sqEdge, viewfinderHeight - 10)
+                };
+            }
+            // Wide rectangular area for 1D barcodes, ample height for 2D QR codes
+            const boxWidth = Math.max(250, Math.floor(viewfinderWidth * 0.82));
+            const boxHeight = Math.max(160, Math.floor(minDim * 0.55));
+            return {
+                width: Math.min(boxWidth, viewfinderWidth - 10),
+                height: Math.min(boxHeight, viewfinderHeight - 10)
+            };
+        };
+
         scanner.start(
             { facingMode: "environment" },
             {
-                fps: 15,
-                qrbox: { width: 300, height: 300 }
+                fps: 20,
+                qrbox: qrboxFunction
             },
             function (decodedText) {
                 window.setScanToggle(true);
@@ -119,13 +147,13 @@
             },
             function (errName) {
                 scanFrames++;
-                if (scanFrames === 1 || scanFrames % 15 === 0) {
-                    setMsg("Line up the code fully inside the box... (frames: " + scanFrames + ")");
+                if (scanFrames === 1 || scanFrames % 20 === 0) {
+                    setMsg("Line up barcode or QR code inside the box... (frames: " + scanFrames + ")");
                 }
             }
         ).then(() => {
             scanScanner = scanner;
-            setMsg("Camera on. Line up the code fully inside the box.");
+            setMsg("Camera on. Line up barcode or QR code inside the box.");
         }).catch((err) => {
             scanScanner = null;
             window.setScanToggle(true);
@@ -146,7 +174,10 @@
             const res = await fetch("<?php echo BASE_URL; ?>/actions/scan-lookup.php", {
                 method: "POST",
                 headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                body: new URLSearchParams({ code: code })
+                body: new URLSearchParams({ 
+                    code: code,
+                    csrf_token: "<?php echo csrf_token(); ?>"
+                })
             });
             const data = await res.json();
             if (!data.ok) {
@@ -163,6 +194,18 @@
             closeScanModal();
         } catch (e) {
             setMsg("Lookup failed. Please try again.", true);
+            try {
+                fetch("<?php echo BASE_URL; ?>/actions/log-client-error.php", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        action: "client.scan_lookup_error",
+                        error: String(e && e.message ? e.message : e),
+                        url: "<?php echo BASE_URL; ?>/actions/scan-lookup.php",
+                        context: { scanned_code: code }
+                    })
+                });
+            } catch (ignore) {}
         }
     }
 
@@ -177,7 +220,11 @@
                 await window.ensureHtml5Qrcode();
                 if (!window.Html5Qrcode) throw new Error("Scanner library not loaded.");
                 const el = document.getElementById("scanReader");
-                const scanner = new Html5Qrcode(el ? el.id : "scanReader");
+                const scanner = new Html5Qrcode(el ? el.id : "scanReader", {
+                    experimentalFeatures: {
+                        useBarCodeDetectorIfSupported: true
+                    }
+                });
                 let text = "";
                 if (typeof scanner.scanFileV2 === "function") {
                     const r = await scanner.scanFileV2(file, false);

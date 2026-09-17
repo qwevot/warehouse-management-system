@@ -46,14 +46,51 @@
     window.hideLoader = hideLoader;
     window.addEventListener("pageshow", hideLoader);
 
+    // ---- CSRF Token Helper & Fetch Interceptor ----
+    function getCsrfToken() {
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        return meta ? meta.getAttribute("content") : "";
+    }
+    window.getCsrfToken = getCsrfToken;
+
+    const nativeFetch = window.fetch;
+    window.fetch = function (resource, init) {
+        init = init || {};
+        const method = (init.method || "GET").toUpperCase();
+        if (method !== "GET" && method !== "HEAD" && method !== "OPTIONS") {
+            const token = getCsrfToken();
+            if (token) {
+                init.headers = init.headers || {};
+                if (init.headers instanceof Headers) {
+                    if (!init.headers.has("X-CSRF-Token")) {
+                        init.headers.set("X-CSRF-Token", token);
+                    }
+                } else if (Array.isArray(init.headers)) {
+                    init.headers.push(["X-CSRF-Token", token]);
+                } else {
+                    init.headers["X-CSRF-Token"] = token;
+                }
+            }
+        }
+        return nativeFetch.call(this, resource, init);
+    };
+
     // ---- AJAX Post Helper ----
     function post(url, data) {
+        const token = getCsrfToken();
+        const params = new URLSearchParams(data);
+        if (!params.has("csrf_token") && token) {
+            params.append("csrf_token", token);
+        }
         return fetch(url, {
             method: "POST",
             credentials: "same-origin",
             cache: "no-store",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: new URLSearchParams(data)
+            headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+                "X-CSRF-Token": token
+            },
+            body: params
         });
     }
     window.post = post;
@@ -188,11 +225,12 @@
         const f = document.createElement("form");
         f.method = "POST";
         f.action = action;
-        Object.keys(data || {}).forEach((key) => {
+        const payload = Object.assign({}, data, { csrf_token: getCsrfToken() });
+        Object.keys(payload).forEach((key) => {
             const inp = document.createElement("input");
             inp.type = "hidden";
             inp.name = key;
-            inp.value = data[key];
+            inp.value = payload[key];
             f.appendChild(inp);
         });
         document.body.appendChild(f);
@@ -346,6 +384,26 @@
         }
         return out;
     };
+
+    // ---- Live Sidebar Server Clock Ticker ----
+    function initSidebarClock() {
+        const clockEl = document.getElementById("sidebarServerClock");
+        if (!clockEl) return;
+        const initialTs = parseInt(clockEl.dataset.serverTs, 10);
+        if (!initialTs) return;
+
+        let currentMs = initialTs * 1000;
+        const pad = (n) => String(n).padStart(2, "0");
+
+        function tick() {
+            currentMs += 1000;
+            const d = new Date(currentMs);
+            clockEl.textContent = pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+        }
+
+        setInterval(tick, 1000);
+    }
+    initSidebarClock();
 
     // Auto-consume pending flash on load
     consumeFlash();

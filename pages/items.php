@@ -3,35 +3,29 @@ $pageTitle = 'Items';
 $activeNav = 'items';
 
 require_once __DIR__ . '/../includes/auth.php';
-require_login();
+require_staff();
 
 $items = [];
 $dbError = '';
 
 try {
     $pdo = db();
-    // READ: all active master item types, with how many active warehouse lots, units, and alert configurations.
+    // READ: all active master item types, with how many active warehouse units and alert configurations.
     $items = $pdo->query(
         "SELECT mi.id, mi.product_code, mi.product_name, mi.brand, mi.product_class, mi.created_at, mi.updated_at, mi.modified_by,
                 ias.alert_enabled, ias.threshold AS custom_threshold,
-                (SELECT COUNT(*) FROM inventory_list m 
-                 WHERE m.name = mi.product_name COLLATE utf8mb4_general_ci 
-                   AND COALESCE(m.brand, '') = mi.brand COLLATE utf8mb4_general_ci 
-                   AND m.deleted_at IS NULL 
-                   AND m.quantity > 0 
-                   AND m.status = 'available'
-                   AND m.deployment_site = 'In Warehouse') AS used_by,
-                (SELECT COALESCE(SUM(m.quantity), 0) FROM inventory_list m 
-                 WHERE m.name = mi.product_name COLLATE utf8mb4_general_ci 
-                   AND COALESCE(m.brand, '') = mi.brand COLLATE utf8mb4_general_ci 
-                   AND m.deleted_at IS NULL 
-                   AND m.status = 'available' 
-                   AND m.quantity > 0
-                   AND m.deployment_site = 'In Warehouse') AS total_qty
+                (SELECT COUNT(*) FROM inventory_units u 
+                 WHERE u.master_item_id = mi.id 
+                   AND u.deleted_at IS NULL) AS used_by,
+                (SELECT COUNT(*) FROM inventory_units u 
+                 WHERE u.master_item_id = mi.id 
+                   AND u.deleted_at IS NULL 
+                   AND u.status = 'available' 
+                   AND (u.deployment_site = 'In Warehouse' OR u.deployment_site = '' OR u.deployment_site IS NULL)) AS total_qty
          FROM master_items mi
          LEFT JOIN item_alert_settings ias ON ias.master_item_id = mi.id
          WHERE mi.deleted_at IS NULL
-         ORDER BY mi.product_code ASC"
+         ORDER BY COALESCE(mi.updated_at, mi.created_at) DESC, mi.id DESC"
     )->fetchAll();
 } catch (Exception $e) {
     $dbError = 'Could not load master items from the database.';
@@ -52,6 +46,8 @@ require_once __DIR__ . '/../includes/data-toolbar.php';
 require_once __DIR__ . '/../includes/data-pagination.php';
 
 $itemsSortOptions = [
+    ['modified-desc','Modified (Newest)'],
+    ['modified-asc', 'Modified (Oldest)'],
     ['code-asc',    'Code (A–Z)'],
     ['code-desc',   'Code (Z–A)'],
     ['name-asc',    'Name (A–Z)'],
@@ -60,8 +56,6 @@ $itemsSortOptions = [
     ['brand-desc',  'Brand (Z–A)'],
     ['class-asc',   'Class (A–Z)'],
     ['class-desc',  'Class (Z–A)'],
-    ['modified-desc','Modified (Newest)'],
-    ['modified-asc', 'Modified (Oldest)'],
 ];
 $itemsToolbar    = buildToolbar('items', $itemsSortOptions);
 $itemsPagination = buildPagination('items');
@@ -153,6 +147,7 @@ $itemsPagination = buildPagination('items');
 <!-- Edit master item modal -->
 <div class="modal-backdrop" id="editItemModal">
     <form method="POST" action="<?php echo BASE_URL; ?>/actions/save-master-item.php" class="modal">
+        <?php echo csrf_field(); ?>
         <div class="modal-header">
             <div class="modal-title">Edit Master Item</div>
             <button type="button" class="modal-close" onclick="closeEditItemModal()">×</button>
@@ -161,8 +156,8 @@ $itemsPagination = buildPagination('items');
             <input type="hidden" name="id" id="editItemId">
             <div class="form-grid">
                 <div class="field">
-                    <label for="editProductCode">Product code</label>
-                    <input type="text" id="editProductCode" name="product_code" required maxlength="4">
+                    <label for="editProductCode">Product code (Numbers only)</label>
+                    <input type="text" id="editProductCode" name="product_code" required maxlength="4" inputmode="numeric" pattern="\d{1,4}" oninput="this.value = this.value.replace(/\D/g, '').slice(0, 4)" title="4-digit number (e.g. 0001)">
                 </div>
                 <div class="field">
                     <label for="editProductName">Product name</label>
@@ -332,13 +327,12 @@ initDataTable({
     }
 
     async function confirmDeleteItem(id, code, usedBy) {
-        if (usedBy > 0) {
-            alert("Cannot delete \"" + code + "\" — it is still used by " + usedBy + " inventory item(s).");
-            return;
-        }
+        const msg = usedBy > 0
+            ? "Move master item \"" + code + "\" to the master bin? This will ALSO move all " + usedBy + " inventory unit(s) to the bin."
+            : "Move master item \"" + code + "\" to the master bin?";
         const ok = await window.promptModal({
             title: "Move master item to the bin?",
-            message: "Move \"" + code + "\" to the master bin?",
+            message: msg,
             confirmLabel: "Move to Bin",
             withNote: false,
         });

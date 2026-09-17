@@ -3,7 +3,7 @@ $pageTitle = 'Brands';
 $activeNav = 'brands';
 
 require_once __DIR__ . '/../includes/auth.php';
-require_login();
+require_staff();
 
 $brands = [];
 $dbError = '';
@@ -13,10 +13,10 @@ try {
     // READ: all active brands, with how many active items use each.
     $brands = $pdo->query(
         "SELECT b.id, b.name, b.description, b.updated_at, b.modified_by,
-                (SELECT COUNT(*) FROM inventory_list m WHERE m.brand = b.name AND m.deleted_at IS NULL) AS used_by
+                (SELECT COUNT(*) FROM master_items mi WHERE mi.brand = b.name AND mi.deleted_at IS NULL) AS used_by
          FROM master_brands b
          WHERE b.deleted_at IS NULL
-         ORDER BY b.name ASC"
+         ORDER BY COALESCE(b.updated_at, b.created_at) DESC, b.id DESC"
     )->fetchAll();
 } catch (Exception $e) {
     $dbError = 'Could not load brands from the database.';
@@ -28,6 +28,8 @@ require_once __DIR__ . '/../includes/data-toolbar.php';
 require_once __DIR__ . '/../includes/data-pagination.php';
 
 $brandSortOptions = [
+    ['date-desc',  'Last Modified (Newest)'],
+    ['date-asc',   'Last Modified (Oldest)'],
     ['name-asc',   'Name (A–Z)'],
     ['name-desc',  'Name (Z–A)'],
 ];
@@ -38,7 +40,7 @@ $brandPagination = buildPagination('brand');
 <?php
 $flashAfterError = '';
 if (isset($_GET['bin_restore']) && (int)$_GET['bin_restore'] > 0) {
-    $flashAfterError = ' <a href="' . BASE_URL . '/actions/restore-brand.php?id=' . (int)$_GET['bin_restore'] . '">restore it?</a>';
+    $flashAfterError = ' <form method="POST" action="' . BASE_URL . '/actions/restore-brand.php" style="display:inline;">' . csrf_field() . '<input type="hidden" name="from" value="brand"><input type="hidden" name="id" value="' . (int)$_GET['bin_restore'] . '"><button type="submit" style="background:none;border:none;color:inherit;text-decoration:underline;cursor:pointer;padding:0;font:inherit;font-weight:bold;">restore it?</button></form>';
 }
 include __DIR__ . '/../includes/flash.php';
 ?>
@@ -183,6 +185,7 @@ initDataTable({
 <!-- Edit brand modal -->
 <div class="modal-backdrop" id="renameBrandModal">
     <form method="POST" action="<?php echo BASE_URL; ?>/actions/save-brand.php" class="modal">
+        <?php echo csrf_field(); ?>
         <div class="modal-header">
             <div class="modal-title">Edit Brand</div>
             <button type="button" class="modal-close" onclick="closeRenameModal()">×</button>
@@ -219,13 +222,12 @@ initDataTable({
     }
 
     async function confirmDelete(id, name, usedBy) {
-        if (usedBy > 0) {
-            alert("Cannot delete \"" + name + "\" — it is still used by " + usedBy + " item(s).");
-            return;
-        }
+        const msg = usedBy > 0
+            ? "Move brand \"" + name + "\" to the master bin? This will ALSO move all " + usedBy + " associated item(s) and their inventory units to the bin."
+            : "Move brand \"" + name + "\" to the master bin?";
         const ok = await window.promptModal({
             title: "Move brand to the bin?",
-            message: "Move brand \"" + name + "\" to the master bin?",
+            message: msg,
             confirmLabel: "Move to Bin",
             withNote: false,
         });

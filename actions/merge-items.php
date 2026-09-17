@@ -1,13 +1,15 @@
 <?php
 // MERGE: combines several items into one. Two modes:
-//   new      -> creates a brand-new item (new serial/barcode/QR) with the
-//               summed quantity, then soft-deletes the merged items.
-//   existing -> adds the summed quantity to an existing item (its barcode
-//               number is kept), then soft-deletes the merged items.
+//   new      -> generates a brand-new barcode for all units of selected items,
+//               effectively grouping them into a new lot.
+//   existing -> assigns the selected target item's barcode to all units of
+//               selected items, merging them into that target lot.
 // Called via AJAX from the Barcode & QR Code Generator page.
 require_once __DIR__ . '/../includes/auth.php';
 require_login_api();
+require_csrf_api();
 require_can_api('inventory.manage');
+require_once __DIR__ . '/../includes/functions.php';
 
 $pdo  = json_db();
 $mode = $_POST['mode'] ?? 'new';
@@ -38,7 +40,13 @@ $pdo->beginTransaction();
 
 try {
     $inPlaceholders = implode(',', array_fill(0, count($ids), '?'));
-    $st = $pdo->prepare("SELECT * FROM inventory_list WHERE id IN ($inPlaceholders) FOR UPDATE");
+    // Lock and inspect target units
+    $st = $pdo->prepare("
+        SELECT u.*, mi.product_name AS name, mi.brand AS brand 
+        FROM inventory_units u 
+        JOIN master_items mi ON mi.id = u.master_item_id 
+        WHERE u.id IN ($inPlaceholders) FOR UPDATE
+    ");
     $st->execute($ids);
     $rows = $st->fetchAll();
 
@@ -56,21 +64,16 @@ try {
 
     $first = $rows[0];
     foreach ($rows as $row) {
-        if (
-            strcasecmp(trim($row['name'] ?? ''), trim($first['name'] ?? '')) !== 0 ||
-            strcasecmp(trim($row['brand'] ?? ''), trim($first['brand'] ?? '')) !== 0
-        ) {
+        if ((int)$row['master_item_id'] !== (int)$first['master_item_id']) {
             $pdo->rollBack();
             json_fail('Only items with the same product name and brand can be merged.');
         }
     }
 
-    $totalQty = 0;
-    foreach ($rows as $row) {
-        $totalQty += max(0, (int)$row['quantity']);
-    }
-
     $modifiedBy = current_user_name();
+
+    // Collect all barcodes associated with the selected items
+    $selectedBarcodes = array_values(array_unique(array_filter(array_column($rows, 'barcode'))));
 
     if ($mode === 'existing') {
         $target = null;
@@ -85,53 +88,110 @@ try {
             json_fail('Target item not found among locked items.');
         }
 
-        // The target keeps its own barcode and absorbs the summed quantity of
-        // every selected item (its own quantity is already part of the total).
-        $pdo->prepare('UPDATE inventory_list SET quantity = ?, updated_at = NOW(), modified_by = ? WHERE id = ?')
-            ->execute([$totalQty, $modifiedBy, $targetId]);
+        $targetBarcode = $target['barcode'];
+        $targetLocation = $target['location'] ?? null;
+        $targetBin = $target['bin_location'] ?? null;
+        $targetDeployment = $target['deployment_site'] ?? 'In Warehouse';
 
-        foreach ($ids as $id) {
-            if ($id === $targetId) continue;
-            // Transfer active unit records from absorbed lots to the target lot so they stay connected
-            $pdo->prepare("UPDATE inventory_units SET inventory_id = ?, updated_at = NOW(), modified_by = ? WHERE inventory_id = ? AND deleted_at IS NULL")
-                ->execute([$targetId, $modifiedBy, $id]);
-            $pdo->prepare("UPDATE inventory_list SET deleted_at = NOW(), status = 'taken', modified_by = ?, updated_at = NOW() WHERE id = ?")
-                ->execute([$modifiedBy, $id]);
+        // For all units matching either the selected IDs or the selected barcodes with same master_item_id:
+        // update their barcode, qr, location, and bin to match the target
+        if (!empty($selectedBarcodes)) {
+            $bcPlaceholders = implode(',', array_fill(0, count($selectedBarcodes), '?'));
+            $stAffected = $pdo->prepare("
+                SELECT id, serial FROM inventory_units 
+                WHERE master_item_id = ? AND barcode IN ($bcPlaceholders) AND deleted_at IS NULL
+            ");
+            $stAffected->execute(array_merge([(int)$first['master_item_id']], $selectedBarcodes));
+        } else {
+            $stAffected = $pdo->prepare("
+                SELECT id, serial FROM inventory_units 
+                WHERE id IN ($inPlaceholders) AND deleted_at IS NULL
+            ");
+            $stAffected->execute($ids);
         }
+        $affectedUnits = $stAffected->fetchAll();
+        $affectedUnitIds = array_column($affectedUnits, 'id');
+
+        $isBin = preg_match('/^S\d+-R\d+-C\d+/', (string)$targetLocation);
+        set_unit_custody($pdo, $affectedUnitIds, 'warehouse', [
+            'bin_location' => $isBin ? $targetLocation : null,
+            'custom_location' => !$isBin ? $targetLocation : null,
+        ], $modifiedBy);
+
+        $stUnitUp = $pdo->prepare("UPDATE inventory_units SET barcode = ?, qr = ? WHERE id = ?");
+        foreach ($affectedUnits as $u) {
+            $uQr = qr_for_unit((string)$u['serial'], (string)$targetBarcode, (string)$target['name'], (string)($target['brand'] ?? ''), (string)($targetLocation ?? ''));
+            $stUnitUp->execute([$targetBarcode, $uQr, (int)$u['id']]);
+        }
+
+        $pdo->prepare('INSERT INTO stock_movements (item_id, type, quantity, note, modified_by) VALUES (?, ?, ?, ?, ?)')
+            ->execute([$targetId, 'merge', count($ids), 'Merged ' . count($ids) . ' lots/units into barcode ' . $targetBarcode, $modifiedBy]);
     } else {
-        $name = trim($_POST['name'] ?? '');
-        if ($name === '') {
-            $name = $first['name'];
+        $name = trim($_POST['name'] ?? '') ?: $first['name'];
+        $rawLoc  = trim((string)($first['location'] ?? ''));
+        $binLoc  = $first['bin_location'] ?? (preg_match('/^S\d+-R\d+-C\d+/', $rawLoc) ? $rawLoc : null);
+        $depSite = $first['deployment_site'] ?? ($binLoc ? 'In Warehouse' : ($rawLoc ?: 'In Warehouse'));
+        $loc     = $rawLoc !== '' ? $rawLoc : ($binLoc ?: $depSite);
+
+        $barcode = barcode_for_item($pdo, [
+            'master_item_id' => $first['master_item_id'],
+            'name'           => $name,
+            'brand'          => $first['brand'],
+            'created_at'     => null,
+            'barcode'        => null,
+        ]);
+
+        // Update all selected units to new barcode and unit-level QR
+        if (!empty($selectedBarcodes)) {
+            $bcPlaceholders = implode(',', array_fill(0, count($selectedBarcodes), '?'));
+            $stAffected = $pdo->prepare("
+                SELECT id, serial FROM inventory_units 
+                WHERE master_item_id = ? AND barcode IN ($bcPlaceholders) AND deleted_at IS NULL
+            ");
+            $stAffected->execute(array_merge([(int)$first['master_item_id']], $selectedBarcodes));
+        } else {
+            $stAffected = $pdo->prepare("
+                SELECT id, serial FROM inventory_units 
+                WHERE id IN ($inPlaceholders) AND deleted_at IS NULL
+            ");
+            $stAffected->execute($ids);
+        }
+        $affectedUnits = $stAffected->fetchAll();
+        $affectedUnitIds = array_column($affectedUnits, 'id');
+
+        $isBin = preg_match('/^S\d+-R\d+-C\d+/', (string)$loc);
+        set_unit_custody($pdo, $affectedUnitIds, 'warehouse', [
+            'bin_location' => $isBin ? $loc : null,
+            'custom_location' => !$isBin ? $loc : null,
+        ], $modifiedBy);
+
+        $stUnitUp = $pdo->prepare("UPDATE inventory_units SET barcode = ?, qr = ? WHERE id = ?");
+        foreach ($affectedUnits as $u) {
+            $uQr = qr_for_unit((string)$u['serial'], (string)$barcode, (string)$name, (string)($first['brand'] ?? ''), (string)$loc);
+            $stUnitUp->execute([$barcode, $uQr, (int)$u['id']]);
         }
 
-        // Auto-generate barcode via null parameter (acting as a new inbound lot)
-        $created = create_inventory_item($pdo, [
-            'name'            => $name,
-            'brand'           => $first['brand'],
-            'quantity'        => $totalQty,
-            'location'        => $first['location'],
-            'bin_location'    => $first['bin_location'] ?? null,
-            'deployment_site' => $first['deployment_site'] ?? 'In Warehouse',
-            'photo'           => $first['photo'],
-            'status'          => 'available',
-            'modified_by'     => $modifiedBy,
-        ], null);
-
-        // Soft-delete the merged lots and retire their old unit records
-        foreach ($ids as $id) {
-            $pdo->prepare("UPDATE inventory_units SET deleted_at = NOW(), status = 'taken', modified_by = ?, updated_at = NOW() WHERE inventory_id = ? AND deleted_at IS NULL")
-                ->execute([$modifiedBy, $id]);
-            $pdo->prepare("UPDATE inventory_list SET deleted_at = NOW(), status = 'taken', modified_by = ?, updated_at = NOW() WHERE id = ?")
-                ->execute([$modifiedBy, $id]);
-        }
+        $pdo->prepare('INSERT INTO stock_movements (item_id, type, quantity, note, modified_by) VALUES (?, ?, ?, ?, ?)')
+            ->execute([$ids[0], 'merge', count($ids), 'Merged ' . count($ids) . ' lots/units into new barcode ' . $barcode, $modifiedBy]);
     }
 
     $pdo->commit();
+
+    log_activity('inventory.merge', 'inventory_units', ($mode === 'existing' ? $targetId : $ids[0]), [
+        'mode' => $mode,
+        'merged_ids' => $ids,
+        'final_barcode' => ($mode === 'existing' ? $targetBarcode : $barcode),
+        'unit_count' => count($affectedUnits ?? [])
+    ], 'success');
 } catch (Exception $e) {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();
     }
-    json_fail('Could not merge the items.');
+    log_activity('inventory.merge', 'inventory_units', null, [
+        'mode' => $mode,
+        'error' => $e->getMessage()
+    ], 'failure');
+    json_fail('Could not merge the items: ' . $e->getMessage());
 }
 
 json_ok(['message' => 'Items merged.']);
