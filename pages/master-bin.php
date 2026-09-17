@@ -30,7 +30,13 @@ try {
         ORDER BY mi.deleted_at DESC
     ")->fetchAll();
     $binnedCustomers = $pdo->query("
-        SELECT c.id, c.name, c.company_code, c.contact_person, c.updated_at, c.modified_by, c.deleted_at
+        SELECT c.id, c.name, c.company_code, c.contact_person, c.updated_at, c.modified_by, c.deleted_at,
+               (SELECT COUNT(*) FROM inventory_units u 
+                WHERE u.deleted_at IS NOT NULL 
+                  AND (u.bin_note = CONCAT('Cascaded from customer bin: ', c.name) 
+                       OR u.deployment_site LIKE CONCAT(c.name, ' - %') OR u.deployment_site = c.name 
+                       OR u.location LIKE CONCAT(c.name, ' - %') OR u.location = c.name 
+                       OR u.deployment_site LIKE CONCAT('In Transit (', c.name, '%')))) AS binned_units
         FROM master_customers c 
         WHERE c.deleted_at IS NOT NULL 
         ORDER BY c.deleted_at DESC
@@ -269,7 +275,7 @@ $deleteIcon  = icon_delete();
                             <td>
                                 <div class="row-actions">
                                     <?php if (user_can('master.manage')): ?>
-                                    <button type="button" class="btn icon-btn restore" title="Restore Customer" onclick="handleRestoreCustomer(<?php echo (int)$c['id']; ?>, <?php echo json_encode($c['name']); ?>)">
+                                    <button type="button" class="btn icon-btn restore" title="Restore Customer" onclick="handleRestoreCustomer(<?php echo (int)$c['id']; ?>, <?php echo json_encode($c['name']); ?>, <?php echo (int)($c['binned_units'] ?? 0); ?>)">
                                         <?php echo $restoreIcon; ?>
                                     </button>
                                     <?php endif; ?>
@@ -292,7 +298,19 @@ $deleteIcon  = icon_delete();
         </table>
     </div>
 
-    <?php echo $binCustomerPagination; ?>
+    <div class="table-footer">
+        <div class="pagination-info" id="binCustomerRange"></div>
+        <div class="pagination-pages" id="binCustomerPagination">
+            <button type="button" class="page-nav-btn" id="binCustomerPagePrev" title="Previous page">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+            </button>
+            <div class="page-numbers" id="binCustomerPageNumbers"></div>
+            <button type="button" class="page-nav-btn" id="binCustomerPageNext" title="Next page">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+            </button>
+        </div>
+    </div>
+</div>
 
 </section>
 
@@ -369,9 +387,22 @@ window.BIN_ITEM_DATA = <?php echo json_encode(array_map(function($it) {
         }
     }
 
-    function handleRestoreCustomer(id, name) {
-        if (!confirm("Restore customer \"" + name + "\"?")) return;
-        window.submitPostForm("<?php echo BASE_URL; ?>/actions/restore-customer.php", { id: id, from: "master-bin" });
+    function handleRestoreCustomer(id, name, binnedUnits) {
+        if (binnedUnits > 0) {
+            const restoreUnits = confirm(
+                "Customer \"" + name + "\" has " + binnedUnits + " deployed equipment unit(s) in the bin.\n\n" +
+                "Click OK to restore the customer AND all " + binnedUnits + " equipment unit(s).\n" +
+                "Click Cancel if you want to restore ONLY the customer profile."
+            );
+            window.submitPostForm("<?php echo BASE_URL; ?>/actions/restore-customer.php", {
+                id: id,
+                from: "master-bin",
+                restore_units: restoreUnits ? 1 : 0
+            });
+        } else {
+            if (!confirm("Restore customer \"" + name + "\"?")) return;
+            window.submitPostForm("<?php echo BASE_URL; ?>/actions/restore-customer.php", { id: id, from: "master-bin", restore_units: 0 });
+        }
     }
 
     async function handlePermanentDeleteCustomer(id, name) {

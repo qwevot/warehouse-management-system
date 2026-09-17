@@ -56,7 +56,7 @@ include __DIR__ . '/../includes/flash.php';
     <div class="sticky-zone">
 
         <div class="section-header">
-            <div class="section-title">Customers &amp; Companies</div>
+            <div class="section-title">Customers </div>
             <?php if (user_can('master.manage')): ?>
                 <button type="button" class="btn upload add-button" title="Import customers from a CSV or Excel file" onclick="document.getElementById('importCustomerFile').click()">Import (.csv or .xlsx)</button>
                 <button type="button" class="btn primary add-button add-toggle-btn" id="addCustomerToggleBtn" onclick="toggleCustomerAddForm()">+ Add Customer</button>
@@ -131,7 +131,7 @@ include __DIR__ . '/../includes/flash.php';
                                 <?php endif; ?>
                             </td>
                             <td>
-                                <strong><?php echo e($c['name']); ?></strong>
+                                <?php echo e($c['name']); ?>
                                 <?php if (!empty($c['address'])): ?>
                                     <div style="font-size:11.5px; color:var(--muted); margin-top:2px;" title="<?php echo e($c['address']); ?>">
                                         <?php echo e(mb_strimwidth($c['address'], 0, 45, '...')); ?>
