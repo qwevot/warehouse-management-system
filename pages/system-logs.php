@@ -94,10 +94,6 @@ include __DIR__ . '/../includes/header.php';
     </select>
     <?php endif; ?>
 
-    <button type="submit" class="btn primary" style="padding: 0 16px; height: 38px;">Filter</button>
-    <?php if ($search !== '' || $filterCat !== '' || $filterStatus !== '' || $filterUser !== ''): ?>
-        <a href="system-logs.php" class="btn cancel" style="padding: 0 16px; height: 38px; line-height: 38px;">Reset</a>
-    <?php endif; ?>
 </form>
 
 <section class="inventory-section" id="systemLogsSection">

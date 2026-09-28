@@ -80,11 +80,6 @@ function is_staff(): bool
     return in_array($role, ['technician', 'engineer', 'admin', 'super admin'], true);
 }
 
-// Check if the current user is a customer.
-function is_customer(): bool
-{
-    return current_role() === 'customer';
-}
 
 // Check if the current user is a guest.
 function is_guest(): bool

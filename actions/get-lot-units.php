@@ -27,24 +27,24 @@ if ($barcode !== '') {
     $stUnits = $pdo->prepare("
         SELECT id, serial, qr, status, location, bin_location, deployment_site, created_at
         FROM inventory_units
-        WHERE (barcode = ? OR inventory_id = ?)
+        WHERE master_item_id = ? AND barcode = ?
           AND deleted_at IS NULL 
           AND status = 'available'
           AND (deployment_site = 'In Warehouse' OR deployment_site = '' OR deployment_site IS NULL)
         ORDER BY id ASC
     ");
-    $stUnits->execute([$barcode, $inventoryId]);
+    $stUnits->execute([(int)$lot['master_item_id'], $barcode]);
 } else {
     $stUnits = $pdo->prepare("
         SELECT id, serial, qr, status, location, bin_location, deployment_site, created_at
         FROM inventory_units
-        WHERE (id = ? OR inventory_id = ?)
+        WHERE id = ?
           AND deleted_at IS NULL 
           AND status = 'available'
           AND (deployment_site = 'In Warehouse' OR deployment_site = '' OR deployment_site IS NULL)
         ORDER BY id ASC
     ");
-    $stUnits->execute([$inventoryId, $inventoryId]);
+    $stUnits->execute([$inventoryId]);
 }
 $units = $stUnits->fetchAll(PDO::FETCH_ASSOC);
 

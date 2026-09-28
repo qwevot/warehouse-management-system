@@ -67,7 +67,6 @@ $itemsPagination = buildPagination('items');
 
     <div class="sticky-zone">
         <div class="section-header">
-            <div class="section-title">Master Items</div>
             <?php if (user_can('master.manage')): ?>
                 <button type="button" class="btn upload add-button" title="Import master items from a CSV or Excel file" onclick="document.getElementById('importMasterFile').click()">Import (.csv or .xlsx)</button>
                 <button type="button" class="btn primary add-button add-toggle-btn" id="addMasterItemToggleBtn" onclick="toggleMasterAddForm()">+ Add Item</button>

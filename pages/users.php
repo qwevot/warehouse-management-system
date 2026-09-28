@@ -42,7 +42,6 @@ $userPagination = buildPagination('user', ['pageSize' => 10]);
 
     <div class="sticky-zone">
         <div class="section-header">
-            <div class="section-title">Users</div>
             <button type="button" class="btn primary add-button" onclick="openAddUserModal()">+ Add User</button>
         </div>
     </div>
@@ -85,7 +84,7 @@ $userPagination = buildPagination('user', ['pageSize' => 10]);
                                     </button>
                                     <?php if ((int)$u['id'] !== $currentUserId): ?>
                                         <button type="button" class="btn icon-btn delete" title="Delete" onclick="confirmDeleteUser(<?php echo (int)$u['id']; ?>, <?php echo e(json_encode($u['username'])); ?>)">
-                                             <?php echo icon_delete(); ?>
+                                            <?php echo icon_delete(); ?>
                                         </button>
                                     <?php endif; ?>
                                 </div>

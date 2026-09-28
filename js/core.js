@@ -270,15 +270,6 @@
         window.runDeleteItem(id);
     };
 
-    window.runEditStatus = function () {
-        const btn = $("#editStatusBtn");
-        if (!btn) return;
-        const label = btn.dataset.action === "taken"
-            ? "Move this item out of the warehouse?"
-            : "Return this item to the warehouse?";
-        if (!confirm(label)) return;
-        runAction(BASE + "/actions/update-status.php", { id: btn.dataset.id, action: btn.dataset.action }, btn, "Update failed.", "Status updated.");
-    };
 
     // ---- Sidebar Navigation ----
     window.toggleSidebar = function () {

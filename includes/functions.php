@@ -8,26 +8,6 @@ function e($value): string
     return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
 }
 
-function get_system_setting(PDO $pdo, string $key, string $default = ''): string
-{
-    try {
-        $st = $pdo->prepare('SELECT setting_value FROM system_settings WHERE setting_key = ? LIMIT 1');
-        $st->execute([$key]);
-        $val = $st->fetchColumn();
-        return $val !== false ? (string)$val : $default;
-    } catch (Exception $e) {
-        return $default;
-    }
-}
-
-function set_system_setting(PDO $pdo, string $key, string $value, ?string $updatedBy = null): void
-{
-    $st = $pdo->prepare('INSERT INTO system_settings (setting_key, setting_value, updated_by, updated_at) 
-                        VALUES (?, ?, ?, NOW()) 
-                        ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), updated_by = VALUES(updated_by), updated_at = NOW()');
-    $st->execute([$key, $value, $updatedBy]);
-}
-
 /**
  * Record an action or security event in the system_logs table.
  * Designed to be fail-safe so logging failures never disrupt user operations.
@@ -432,12 +412,6 @@ function next_unit_serials(PDO $pdo, int $count = 1): array
     }
 }
 
-function next_unit_serial(PDO $pdo): string
-{
-    $list = next_unit_serials($pdo, 1);
-    return $list[0] ?? ('SN-' . date('Y') . '-00001');
-}
-
 function provision_inventory_units(PDO $pdo, $inventoryId, int $count, ?string $modifiedBy = null, string $status = 'available'): array
 {
     if ($count <= 0) return [];
@@ -610,22 +584,6 @@ function fetch_movements(PDO $pdo, ?int $limit = null): array
     return $pdo->query($sql)->fetchAll();
 }
 
-// Active inventory rows, shared by the Stock In / Stock Out / Transfers pages.
-function fetch_active_items(PDO $pdo): array
-{
-    return $pdo->query(
-        "SELECT MIN(u.id) AS id, u.master_item_id, mi.product_name AS name, mi.brand AS brand, '' AS serial, COUNT(u.id) AS quantity,
-                COALESCE(NULLIF(MAX(u.bin_location), ''), NULLIF(MAX(u.location), ''), MAX(u.deployment_site), '') AS location,
-                MAX(u.bin_location) AS bin_location, MAX(u.deployment_site) AS deployment_site, MAX(u.location) AS raw_location, u.barcode, '' AS qr, MAX(u.status) AS status, COALESCE(MAX(NULLIF(u.photo, '')), '') AS photo, MIN(u.created_at) AS created_at
-         FROM inventory_units u
-         JOIN master_items mi ON mi.id = u.master_item_id
-         WHERE u.deleted_at IS NULL
-           AND u.status = 'available'
-           AND (u.deployment_site = 'In Warehouse' OR u.deployment_site = '' OR u.deployment_site IS NULL)
-         GROUP BY COALESCE(NULLIF(u.barcode, ''), CONCAT('unit-', u.id)), u.master_item_id
-         ORDER BY mi.product_name ASC"
-    )->fetchAll();
-}
 
 function movement_type_labels(): array
 {
@@ -1053,6 +1011,7 @@ function set_unit_custody(PDO $pdo, int|array $unitIds, string $custodyType, arr
                 $deploymentSite = 'In Warehouse';
                 $location       = 'In Warehouse';
             }
+            $status         = 'available';
             break;
 
         case 'transit':
@@ -1061,6 +1020,7 @@ function set_unit_custody(PDO $pdo, int|array $unitIds, string $custodyType, arr
             $binLocation    = null;
             $deploymentSite = $transitLabel;
             $location       = $transitLabel;
+            $status         = 'in_transit';
             break;
 
         case 'customer':
@@ -1070,12 +1030,14 @@ function set_unit_custody(PDO $pdo, int|array $unitIds, string $custodyType, arr
             $binLocation    = null;
             $deploymentSite = $siteLabel;
             $location       = $siteLabel;
+            $status         = 'deployed';
             break;
 
         case 'office':
             $binLocation    = null;
             $deploymentSite = 'Main Office';
             $location       = 'Main Office';
+            $status         = 'available';
             break;
 
         default:

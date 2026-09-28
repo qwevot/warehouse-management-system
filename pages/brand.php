@@ -50,7 +50,6 @@ include __DIR__ . '/../includes/flash.php';
     <div class="sticky-zone">
 
         <div class="section-header">
-            <div class="section-title">Brands</div>
             <?php if (user_can('master.manage')): ?>
                 <button type="button" class="btn upload add-button" title="Import brands from a CSV or Excel file" onclick="document.getElementById('importBrandFile').click()">Import (.csv or .xlsx)</button>
                 <button type="button" class="btn primary add-button add-toggle-btn" id="addBrandToggleBtn" onclick="toggleBrandAddForm()">+ Add Brand</button>

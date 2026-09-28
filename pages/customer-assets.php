@@ -212,11 +212,27 @@ $assetPagination = buildPagination('asset', ['pageSize' => 10]);
                 <?php if (empty($rows)): ?>
                     <tr><td colspan="<?php echo $role === 'customer' ? '10' : '11'; ?>" style="text-align:center; color:#9ca3af; padding:40px;">No deployed equipment found.</td></tr>
                 <?php else: ?>
-                    <?php foreach ($rows as $i => $item): ?>
+                    <?php foreach ($rows as $i => $item): 
+                        $locStr = (string)$item['location'];
+                        $depStr = (string)($item['deployment_site'] ?? '');
+                        $rawSt  = strtolower((string)($item['status'] ?? ''));
+                        $isTransit = str_starts_with($locStr, 'In Transit') || str_starts_with($depStr, 'In Transit') || $rawSt === 'in_transit';
+                        $isInactive = (!empty($item['deleted_at']) || $rawSt === 'inactive');
+                        if ($isTransit) {
+                            $stLabel = 'IN TRANSIT';
+                            $stClass = 'in_transit';
+                        } elseif ($isInactive) {
+                            $stLabel = 'INACTIVE';
+                            $stClass = 'inactive';
+                        } else {
+                            $stLabel = 'DEPLOYED';
+                            $stClass = 'deployed';
+                        }
+                    ?>
                         <tr class="asset-row" 
                             data-id="<?php echo (int)$item['id']; ?>" 
                             data-brand="<?php echo e($item['brand']); ?>"
-                            data-status="<?php echo e($item['status']); ?>"
+                            data-status="<?php echo e($stClass); ?>"
                             data-loc="<?php echo e($item['location']); ?>"
                             data-name="<?php echo e($item['name']); ?>"
                             data-created="<?php echo (int)strtotime((string)$item['created_at']); ?>">
@@ -239,22 +255,6 @@ $assetPagination = buildPagination('asset', ['pageSize' => 10]);
                             <td><?php echo dash($item['brand']); ?></td>
                             <td><span class="location"><?php echo e($item['location']); ?></span></td>
                             <td>
-                                <?php
-                                $locStr = (string)$item['location'];
-                                $depStr = (string)($item['deployment_site'] ?? '');
-                                $isTransit = str_starts_with($locStr, 'In Transit') || str_starts_with($depStr, 'In Transit') || $item['status'] === 'in_transit';
-                                $isInactive = (!empty($item['deleted_at']) || in_array(strtolower((string)$item['status']), ['inactive', 'taken'], true));
-                                if ($isTransit) {
-                                    $stLabel = 'IN TRANSIT';
-                                    $stClass = 'in_transit';
-                                } elseif ($isInactive) {
-                                    $stLabel = 'INACTIVE';
-                                    $stClass = 'inactive';
-                                } else {
-                                    $stLabel = 'ACTIVE';
-                                    $stClass = 'available';
-                                }
-                                ?>
                                 <span class="status <?php echo $stClass; ?>">
                                     <?php echo $stLabel; ?>
                                 </span>
@@ -288,7 +288,11 @@ $assetPagination = buildPagination('asset', ['pageSize' => 10]);
     window.ASSET_DATA = <?php echo json_encode(array_map(function ($it) use ($role) {
         $locStr = (string)$it['location'];
         $depStr = (string)($it['deployment_site'] ?? '');
-        $isTransit = str_starts_with($locStr, 'In Transit') || str_starts_with($depStr, 'In Transit') || $it['status'] === 'in_transit';
+        $rawSt  = strtolower((string)($it['status'] ?? ''));
+        $isTransit = str_starts_with($locStr, 'In Transit') || str_starts_with($depStr, 'In Transit') || $rawSt === 'in_transit';
+        $isInactive = (!empty($it['deleted_at']) || $rawSt === 'inactive');
+        $finalStatus = $isTransit ? 'in_transit' : ($isInactive ? 'inactive' : 'deployed');
+
         return [
             'id'          => (int)$it['id'],
             'serial'      => $it['serial'],
@@ -299,7 +303,7 @@ $assetPagination = buildPagination('asset', ['pageSize' => 10]);
             'barcode'     => ($role === 'customer') ? '' : ($it['barcode'] ?? ''),
             'qr'          => $it['qr'] ?? '',
             'photo'       => !empty($it['photo']) ? BASE_URL . '/' . $it['photo'] : '',
-            'status'      => $isTransit ? 'in_transit' : $it['status'],
+            'status'      => $finalStatus,
             'is_transit'  => $isTransit,
             'created_at'  => $it['created_at'] ? date('Y-m-d H:i', strtotime($it['created_at'])) : '',
             'created_ts'  => $it['created_at'] ? (int)strtotime($it['created_at']) : 0,
@@ -350,9 +354,8 @@ $assetPagination = buildPagination('asset', ['pageSize' => 10]);
                     key: 'status',
                     dataValue: (r) => r.status,
                     options: [
-                        { value: 'available',   label: 'Active' },
+                        { value: 'deployed',    label: 'Deployed' },
                         { value: 'in_transit',  label: 'In Transit' },
-                        { value: 'taken',       label: 'Inactive' },
                     ],
                 },
             ],

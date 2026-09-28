@@ -168,8 +168,9 @@ $isCustomer = ($currRole === 'customer');
         
         const statusEl = document.getElementById("ciItemStatus");
         if (statusEl) {
-            statusEl.textContent = (item.status || "available").toUpperCase();
-            statusEl.className = "status " + (item.status === "available" ? "available" : "taken");
+            const rawStatus = (item.status || "available").toString().trim();
+            statusEl.textContent = rawStatus.replace(/_/g, " ").toUpperCase();
+            statusEl.className = "status " + rawStatus.toLowerCase().replace(/\s+/g, "_");
         }
 
         // Reset inputs

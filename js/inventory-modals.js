@@ -7,6 +7,16 @@
     const $ = window.$;
     const $all = window.$all;
 
+    function resolvePhotoUrl(src) {
+        if (!src) return "";
+        if (src.startsWith("http://") || src.startsWith("https://") || src.startsWith("data:") || src.startsWith("/")) {
+            return src;
+        }
+        const base = (window.BASE || window.BASE_URL || "/Inventory").replace(/\/+$/, "");
+        return base + "/" + src.replace(/^\/+/, "");
+    }
+    window.resolvePhotoUrl = resolvePhotoUrl;
+
     // View Item Modal
     window.openItemModal = function (id) {
         const item = (window.INVENTORY || []).find((it) => it.id === id);
@@ -14,7 +24,7 @@
 
         const photoEl = $("#detailPhoto");
         if (photoEl) {
-            photoEl.src = item.photo || "";
+            photoEl.src = resolvePhotoUrl(item.photo);
             photoEl.style.display = item.photo ? "" : "none";
         }
         const nameEl = $("#detailName");
@@ -36,8 +46,10 @@
 
         const status = $("#detailStatus");
         if (status) {
-            status.textContent = item.status === "available" ? "Active" : "Inactive";
-            status.className = "status " + item.status;
+            const rawStatus = (item.status || "available").toString().trim();
+            const formattedText = rawStatus.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+            status.textContent = formattedText;
+            status.className = "status " + rawStatus.toLowerCase().replace(/\s+/g, "_");
         }
 
         // Barcode (EAN-13)
@@ -81,9 +93,14 @@
         const nameEl = document.getElementById("selCardName");
         if (nameEl) nameEl.textContent = it.name || "";
 
+        const isTransferPage = !!document.getElementById("transferForm") || (window.INVENTORY_MODE === "transfers");
+
         const badgeEl = document.getElementById("selCardBadge");
         if (badgeEl) {
-            if (it.is_unit || it.serial) {
+            if (isTransferPage) {
+                badgeEl.style.display = "inline-block";
+                badgeEl.innerHTML = '<span style="background:var(--card-border, #e2e8f0); color:var(--text, #334155); font-size:11px; padding:2px 8px; border-radius:12px; font-weight:600; letter-spacing:0.5px;">WAREHOUSE LOT</span>';
+            } else if (it.is_unit || it.serial) {
                 badgeEl.style.display = "inline-block";
                 badgeEl.innerHTML = '<span style="background:#4f46e5; color:#fff; font-size:11px; padding:2px 8px; border-radius:12px; font-weight:600; letter-spacing:0.5px;">INDIVIDUAL UNIT</span>';
             } else {
@@ -95,8 +112,12 @@
         const serialRow = document.getElementById("selCardSerialRow");
         const serialEl = document.getElementById("selCardSerial");
         if (serialEl) {
-            serialEl.textContent = it.serial ? it.serial : "—";
-            if (serialRow) serialRow.style.display = "";
+            if (isTransferPage) {
+                if (serialRow) serialRow.style.display = "none";
+            } else {
+                serialEl.textContent = it.serial ? it.serial : "—";
+                if (serialRow) serialRow.style.display = "";
+            }
         }
 
         const brandEl = document.getElementById("selCardBrand");
@@ -105,7 +126,12 @@
         const qtyRow = document.getElementById("selCardQtyRow");
         const qtyEl = document.getElementById("selCardQty");
         if (qtyEl) {
-            if (it.is_unit) {
+            if (isTransferPage) {
+                const q = (it.batch_quantity !== undefined && it.batch_quantity !== null && it.batch_quantity > 0)
+                    ? it.batch_quantity
+                    : ((it.quantity !== undefined && it.quantity > 0) ? it.quantity : 1);
+                qtyEl.textContent = q + (q === 1 ? " Unit" : " Units");
+            } else if (it.is_unit) {
                 qtyEl.textContent = "1 Unit" + (it.batch_quantity !== undefined && it.batch_quantity !== null ? "  (Batch On-Hand: " + it.batch_quantity + ")" : "");
             } else {
                 qtyEl.textContent = it.quantity !== undefined ? it.quantity : (it.batch_quantity || 0);
@@ -132,7 +158,7 @@
         const photo = document.getElementById("selCardPhoto");
         const ph = document.getElementById("selCardPhotoPh");
         if (it.photo) {
-            if (photo) { photo.src = it.photo; photo.style.display = ""; }
+            if (photo) { photo.src = resolvePhotoUrl(it.photo); photo.style.display = ""; }
             if (ph) ph.style.display = "none";
         } else {
             if (photo) photo.style.display = "none";
@@ -201,8 +227,6 @@
     }
 
     window.setCardVisible      = setCardVisible;
-    window.closeAddForm        = function () { setCardVisible("add", false); };
-    window.toggleAddForm       = function () { toggleCard("add"); };
     window.closeMasterAddForm  = function () { setCardVisible("master", false); };
     window.toggleMasterAddForm = function () { toggleCard("master"); };
     window.closeBrandAddForm   = function () { setCardVisible("brand", false); };
@@ -225,11 +249,16 @@
         if (nameInp) {
             nameInp.value = item.name || "";
             nameInp.dataset.valid = item.name || "";
+            nameInp.classList.remove("input-error");
         }
         const brandInp = $("#edit_brand");
         if (brandInp) {
             brandInp.value = item.brand || "";
             brandInp.dataset.valid = item.brand || "";
+        }
+        const errEl = $("#editItemNameError");
+        if (errEl) {
+            errEl.style.display = "none";
         }
         const qtyDisp = $("#editQuantityDisplay");
         if (qtyDisp) qtyDisp.textContent = item.quantity || 1;
@@ -241,7 +270,7 @@
         const editPrev = $("#editPhotoPreview");
         const editPh = $("#editPhotoPlaceholder");
         if (item.photo) {
-            if (editPrev) { editPrev.src = item.photo; editPrev.style.display = "block"; }
+            if (editPrev) { editPrev.src = resolvePhotoUrl(item.photo); editPrev.style.display = "block"; }
             if (editPh) editPh.style.display = "none";
         } else {
             if (editPrev) editPrev.style.display = "none";
@@ -279,12 +308,6 @@
         $(photoTargets[photoMode].file).click();
     };
 
-    window.triggerCapturePick = function () {
-        photoMode = "add";
-        const input = $("#photoCaptureFile");
-        if (input) input.click();
-    };
-
     function canvasToDataUrl(img) {
         const maxW = 768;
         const canvas = document.createElement("canvas");
@@ -295,7 +318,7 @@
         return canvas.toDataURL("image/jpeg", 0.65);
     }
 
-    [["#photoFile", "add"], ["#photoCaptureFile", "add"], ["#editPhotoFile", "edit"]].forEach(([sel, mode]) => {
+    [["#photoFile", "add"], ["#editPhotoFile", "edit"]].forEach(([sel, mode]) => {
         const fileInput = $(sel);
         if (fileInput) {
             fileInput.addEventListener("change", function () {
@@ -327,6 +350,78 @@
         });
     }
 
+    const editForm = $("#editItemForm");
+    if (editForm) {
+        editForm.addEventListener("submit", async function (e) {
+            const nameInp = $("#edit_item_name");
+            const brandInp = $("#edit_brand");
+            const errEl = $("#editItemNameError");
+            if (!nameInp) return;
+
+            const trimmedName = nameInp.value.trim();
+            const trimmedBrand = brandInp ? brandInp.value.trim() : "";
+
+            if (!trimmedName) {
+                e.preventDefault();
+                if (errEl) {
+                    errEl.textContent = "Item name is required.";
+                    errEl.style.display = "block";
+                }
+                nameInp.classList.add("input-error");
+                nameInp.focus();
+                return;
+            }
+
+            // If already explicitly marked valid from autocomplete or initial load
+            if (nameInp.dataset.valid && nameInp.dataset.valid.toLowerCase() === trimmedName.toLowerCase()) {
+                if (errEl) errEl.style.display = "none";
+                nameInp.classList.remove("input-error");
+                return;
+            }
+
+            // Otherwise verify against master items catalog
+            e.preventDefault();
+            try {
+                const baseUrl = window.BASE_URL || "/Inventory";
+                const res = await fetch(`${baseUrl}/actions/suggest.php?type=master&q=${encodeURIComponent(trimmedName)}&limit=10`);
+                const data = await res.json();
+                const exact = (data.items || []).find(it => 
+                    it.product_name && it.product_name.toLowerCase() === trimmedName.toLowerCase() &&
+                    (!trimmedBrand || !it.brand || it.brand.toLowerCase() === trimmedBrand.toLowerCase())
+                );
+
+                if (exact) {
+                    nameInp.value = exact.product_name;
+                    nameInp.dataset.valid = exact.product_name;
+                    if (brandInp && exact.brand) {
+                        brandInp.value = exact.brand;
+                        brandInp.dataset.valid = exact.brand;
+                    }
+                    if (errEl) errEl.style.display = "none";
+                    nameInp.classList.remove("input-error");
+                    editForm.submit();
+                } else {
+                    if (errEl) {
+                        errEl.textContent = "⚠️ Product '" + trimmedName + "' does not exist in Master Items. Please select an existing item.";
+                        errEl.style.display = "block";
+                    }
+                    nameInp.classList.add("input-error");
+                    nameInp.focus();
+                    if (window.showFlash) {
+                        window.showFlash("Please choose an existing product from Master Items.", "error");
+                    }
+                }
+            } catch (err) {
+                if (errEl) {
+                    errEl.textContent = "⚠️ Please select an existing item from Master Items.";
+                    errEl.style.display = "block";
+                }
+                nameInp.classList.add("input-error");
+                nameInp.focus();
+            }
+        });
+    }
+
     window.onlyDigits = function (el) {
         el.value = el.value.replace(/[^0-9]/g, "");
     };
@@ -350,10 +445,6 @@
 
     window.updateLocation = function () {
         combineLocation("#locShelf", "#locRow", "#locCol", "#location");
-    };
-
-    window.updateEditLocation = function () {
-        combineLocation("#editLocShelf", "#editLocRow", "#editLocCol", "#edit_location");
     };
 
     // Autocomplete Dropdowns
@@ -541,11 +632,22 @@
         box: "#editItemNameSuggest",
         ajaxType: "master",
         label: (it) => it.product_name + (it.brand ? "  ·  " + it.brand : ""),
+        onInput: () => {
+            const input = $("#edit_item_name");
+            if (input && input.value.trim().toLowerCase() !== (input.dataset.valid || "").toLowerCase()) {
+                input.dataset.valid = "";
+            }
+        },
         pick: (it) => {
             const input = $("#edit_item_name");
             if (input) {
                 input.value = it.product_name;
                 input.dataset.valid = it.product_name;
+                input.classList.remove("input-error");
+            }
+            const errEl = $("#editItemNameError");
+            if (errEl) {
+                errEl.style.display = "none";
             }
             const brandInput = $("#edit_brand");
             if (brandInput && it.brand) {

@@ -431,23 +431,37 @@
         }
 
         function doExport(format) {
-            const cols = cfg.exportCols || [
-                { key: 'name', label: 'Item Name' },
-                { key: 'brand', label: 'Brand' },
-                { key: 'quantity', label: 'Quantity' },
-                { key: 'serial', label: 'Serial' },
-                { key: 'barcode', label: 'Barcode' },
-                { key: 'location', label: 'Location' },
-                { key: 'status', label: 'Status' },
-                { key: 'created_at', label: 'Date Registered' },
-            ];
+            let cols = cfg.exportCols;
+            if (typeof cols === 'function') {
+                cols = cols();
+            }
+            if (!cols) {
+                cols = (window.INVENTORY_MODE === 'units' || window.INVENTORY_MODE === 'bin') ? [
+                    { key: 'name', label: 'Item Name' },
+                    { key: 'brand', label: 'Brand' },
+                    { key: 'location', label: 'Location' },
+                    { key: 'status', label: 'Status' },
+                    { key: 'serial', label: 'Serial' },
+                    { key: 'barcode', label: 'Barcode' },
+                    { key: 'created_at', label: 'Date Registered' },
+                ] : [
+                    { key: 'name', label: 'Item Name' },
+                    { key: 'brand', label: 'Brand' },
+                    { key: 'quantity', label: 'Quantity' },
+                    { key: 'barcode', label: 'Barcode' },
+                    { key: 'location', label: 'Location' },
+                    { key: 'status', label: 'Status' },
+                    { key: 'created_at', label: 'Date Registered' },
+                ];
+            }
+            const exportFileName = (typeof cfg.exportName === 'function' ? cfg.exportName() : cfg.exportName) || (window.INVENTORY_MODE === 'units' ? 'units' : 'inventory');
             const performExport = (rows) => {
                 if (!rows.length) { alert("Nothing to export."); return; }
                 if (format === "csv") {
                     const lines = [cols.map((c) => c.label).join(",")].concat(
                         rows.map((r) => cols.map((c) => window.csvEscape(r[c.key])).join(","))
                     );
-                    window.downloadBlob(new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8;" }), cfg.exportName + ".csv");
+                    window.downloadBlob(new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8;" }), exportFileName + ".csv");
                 } else if (format === "xlsx") {
                     const doXlsx = () => {
                         const data = rows.map((r) => { const o = {}; cols.forEach((c) => o[c.label] = r[c.key]); return o; });
@@ -455,7 +469,7 @@
                         ws["!cols"] = cols.map(() => ({ wch: 20 }));
                         const wb = XLSX.utils.book_new();
                         XLSX.utils.book_append_sheet(wb, ws, "Data");
-                        XLSX.writeFile(wb, cfg.exportName + ".xlsx");
+                        XLSX.writeFile(wb, exportFileName + ".xlsx");
                     };
                     if (window.XLSX) { doXlsx(); }
                     else { ensureXlsx().then(doXlsx).catch(() => alert("Could not load the Excel exporter.")); }
@@ -664,32 +678,6 @@
         let selectedLocation = "";
         let selectedDate = "all";
 
-        window.clearInventoryFilters = function () {
-            selectedBrands.clear();
-            brandSearchText = "";
-            selectedLocation = "";
-            selectedDate = "all";
-            const filterPanel = document.getElementById("filterPanel");
-            if (filterPanel) {
-                filterPanel.querySelectorAll("input").forEach((i) => { i.value = ""; });
-                filterPanel.querySelectorAll(".filter-chip").forEach((c) => { c.classList.remove("active"); });
-                const brandChips = document.getElementById("unitBrandChips");
-                if (brandChips) brandChips.innerHTML = "";
-                const locSelect = document.getElementById("unitLocationFilterSelect");
-                if (locSelect) locSelect.value = "";
-                const dateChips = document.getElementById("invDateChips");
-                if (dateChips) {
-                    dateChips.querySelectorAll(".filter-chip").forEach((btn) => {
-                        btn.classList.remove("active");
-                    });
-                }
-            }
-            const searchInput = document.getElementById("searchInput");
-            if (searchInput) {
-                searchInput.value = "";
-                searchInput.dispatchEvent(new Event("input"));
-            }
-        };
 
         function getRowLocCategory(tr) {
             if (tr.dataset && tr.dataset.locCategory) return tr.dataset.locCategory;
@@ -997,17 +985,28 @@
             pagination:        '#pagination',
             pageSizeSelect:    '#pageSizeSelect',
             exportFn:          'exportTable',
-            exportName:        'inventory',
-            exportCols: [
-                { key: 'name', label: 'Item Name' },
-                { key: 'brand', label: 'Brand' },
-                { key: 'quantity', label: 'Quantity' },
-                { key: 'serial', label: 'Serial' },
-                { key: 'barcode', label: 'Barcode' },
-                { key: 'location', label: 'Location' },
-                { key: 'status', label: 'Status' },
-                { key: 'created_at', label: 'Date Registered' },
-            ],
+            exportName:        function () {
+                return (window.INVENTORY_MODE === 'units') ? 'units' : ((window.INVENTORY_MODE === 'bin') ? 'bin' : 'inventory');
+            },
+            exportCols:        function () {
+                return (window.INVENTORY_MODE === 'units' || window.INVENTORY_MODE === 'bin') ? [
+                    { key: 'name', label: 'Item Name' },
+                    { key: 'brand', label: 'Brand' },
+                    { key: 'location', label: 'Location' },
+                    { key: 'status', label: 'Status' },
+                    { key: 'serial', label: 'Serial' },
+                    { key: 'barcode', label: 'Barcode' },
+                    { key: 'created_at', label: 'Date Registered' },
+                ] : [
+                    { key: 'name', label: 'Item Name' },
+                    { key: 'brand', label: 'Brand' },
+                    { key: 'quantity', label: 'Quantity' },
+                    { key: 'barcode', label: 'Barcode' },
+                    { key: 'location', label: 'Location' },
+                    { key: 'status', label: 'Status' },
+                    { key: 'created_at', label: 'Date Registered' },
+                ];
+            },
             defaultSortKey:    'newest',
             defaultSortDir:    'desc',
             customFilterMatch: inventoryRowMatch,

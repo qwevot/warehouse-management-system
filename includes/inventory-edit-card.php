@@ -28,7 +28,9 @@
                         >
                         <div class="suggest-box" id="editItemNameSuggest"></div>
                     </div>
-                    <div class="error-msg">Please select an item from Master Data.</div>
+                    <div class="error-msg" id="editItemNameError" style="display:none; color:var(--red, #ef4444); font-size:12px; margin-top:4px; font-weight:500;">
+                        ⚠️ Please choose an existing product from Master Items.
+                    </div>
                 </div>
 
                 <div class="field">

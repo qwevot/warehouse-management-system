@@ -17,17 +17,19 @@ $photoData = $_POST['photo'] ?? '';
 $item = find_item($pdo, $id);
 
 if ($item === null) {
-    fail('Item not found.');
+    redirect_to('index', 'error', 'Item not found.');
 }
 
-if ($name === '') fail('Item name is required.');
+if ($name === '') {
+    redirect_to('index', 'error', 'Item name is required.');
+}
 
 // Only allow products that exist in Master Items (matched by name + brand).
 $st = $pdo->prepare('SELECT id, product_name, brand FROM master_items WHERE deleted_at IS NULL AND product_name = ? AND COALESCE(brand, "") = ? LIMIT 1');
 $st->execute([$name, $brand]);
 $mRow = $st->fetch();
 if (!$mRow) {
-    fail('Please choose a product name and brand that exist in Master Items.');
+    redirect_to('index', 'error', 'Please choose a product name and brand that exist in Master Items.');
 }
 $masterItemId = (int)$mRow['id'];
 $name         = $mRow['product_name'];
@@ -42,7 +44,7 @@ $photo = $item['photo'];
 if ($photoData !== '') {
     $newPhoto = save_photo($photoData, 'item_' . $id . '_' . time());
     if ($newPhoto === null) {
-        fail('The new photo could not be saved. Please try again.');
+        redirect_to('index', 'error', 'The new photo could not be saved. Please try again.');
     }
 
     delete_photo($item['photo']);

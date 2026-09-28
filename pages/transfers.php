@@ -126,10 +126,9 @@ include __DIR__ . '/../includes/header.php';
     window.setScanHandler(function (item) {
         document.getElementById("stockItemId").value = item.id;
         const uInput = document.getElementById("transferUnitId");
-        if (uInput) uInput.value = item.unit_id || "";
+        if (uInput) uInput.value = "";
         const input = document.getElementById("stockItemSearch");
-        const snLabel = item.serial ? " [SN: " + item.serial + "]" : "";
-        input.value = item.name + snLabel + (item.brand ? "  (" + item.brand + ")" : "");
+        input.value = item.name + (item.brand ? "  (" + item.brand + ")" : "");
         const cur = document.getElementById("transferCurrentLocation");
         if (cur) cur.textContent = item.location || "—";
         window.showItemCard(item);

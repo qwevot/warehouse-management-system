@@ -114,23 +114,13 @@
 
         const isCustomerRole = <?php echo (function_exists('current_role') && current_role() === 'customer') ? 'true' : 'false'; ?>;
 
-        // Calculate a responsive scanning box: square for customers (QR-focused), rectangular for staff (1D barcode focused)
+        // Calculate a responsive equilateral square scanning box optimized for 2D QR codes
         const qrboxFunction = function (viewfinderWidth, viewfinderHeight) {
             const minDim = Math.min(viewfinderWidth, viewfinderHeight);
-            if (isCustomerRole) {
-                // Square scanning box optimized for QR codes
-                const sqEdge = Math.max(180, Math.floor(minDim * 0.70));
-                return {
-                    width: Math.min(sqEdge, viewfinderWidth - 10),
-                    height: Math.min(sqEdge, viewfinderHeight - 10)
-                };
-            }
-            // Wide rectangular area for 1D barcodes, ample height for 2D QR codes
-            const boxWidth = Math.max(250, Math.floor(viewfinderWidth * 0.82));
-            const boxHeight = Math.max(160, Math.floor(minDim * 0.55));
+            const sqEdge = Math.max(180, Math.min(Math.floor(minDim * 0.75), viewfinderWidth - 20, viewfinderHeight - 20));
             return {
-                width: Math.min(boxWidth, viewfinderWidth - 10),
-                height: Math.min(boxHeight, viewfinderHeight - 10)
+                width: sqEdge,
+                height: sqEdge
             };
         };
 

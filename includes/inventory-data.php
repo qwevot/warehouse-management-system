@@ -303,7 +303,16 @@ function inventory_facets(PDO $pdo, string $mode): array
 function inventory_item_payload(array $item): array
 {
     $depSite = trim((string)($item['deployment_site'] ?? ''));
+    $locStr = trim((string)($item['location'] ?? ''));
     $locCategory = classify_record_location($item);
+    $rawStatus = (string)($item['status'] ?? 'available');
+    if (str_starts_with($locStr, 'In Transit') || str_starts_with($depSite, 'In Transit') || $rawStatus === 'in_transit') {
+        $status = 'in_transit';
+    } elseif ($locCategory === 'customer' || $rawStatus === 'deployed' || $rawStatus === 'taken') {
+        $status = 'deployed';
+    } else {
+        $status = $rawStatus;
+    }
 
     return [
         'id'              => (int)$item['id'],
@@ -317,7 +326,7 @@ function inventory_item_payload(array $item): array
         'barcode'         => $item['barcode'],
         'qr'              => $item['qr'],
         'photo'           => $item['photo'] ? BASE_URL . '/' . $item['photo'] : '',
-        'status'          => $item['status'],
+        'status'          => $status,
         'created_at'      => $item['created_at'] ? date('Y-m-d H:i', strtotime($item['created_at'])) : '',
         'created_ts'      => $item['created_at'] ? (int)strtotime($item['created_at']) : 0,
     ];
@@ -472,10 +481,27 @@ function render_inventory_rows(array $rows, string $mode, int $startIndex = 0): 
         }
 
         if (in_array('status', $cols, true)) {
-            $isInactive = ($mode === 'bin' || !empty($item['deleted_at']) || in_array(strtolower((string)$item['status']), ['inactive', 'taken'], true));
-            $stLabel = $isInactive ? 'INACTIVE' : 'ACTIVE';
-            $stClass = $isInactive ? 'inactive' : 'available';
-            $html .= '<td data-label="Status"><span class="status ' . $stClass . '">' . $stLabel . '</span></td>';
+            $rawStatus = (string)($item['status'] ?? 'available');
+            $locStr = (string)($item['location'] ?? '');
+            $depStr = (string)($item['deployment_site'] ?? '');
+            $locCategory = classify_record_location($item);
+            $isTransit = str_starts_with($locStr, 'In Transit') || str_starts_with($depStr, 'In Transit') || $rawStatus === 'in_transit';
+            $isDeployed = ($locCategory === 'customer' || $rawStatus === 'deployed' || $rawStatus === 'taken');
+
+            if ($mode === 'bin' || !empty($item['deleted_at'])) {
+                $stLabel = 'INACTIVE';
+                $stClass = 'inactive';
+            } elseif ($isTransit) {
+                $stLabel = 'IN TRANSIT';
+                $stClass = 'in_transit';
+            } elseif ($isDeployed) {
+                $stLabel = 'DEPLOYED';
+                $stClass = 'deployed';
+            } else {
+                $stClass = strtolower(str_replace(' ', '_', $rawStatus));
+                $stLabel = strtoupper(str_replace('_', ' ', $rawStatus));
+            }
+            $html .= '<td data-label="Status"><span class="status ' . e($stClass) . '">' . e($stLabel) . '</span></td>';
         }
 
         if (in_array('serial', $cols, true)) {

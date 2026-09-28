@@ -742,7 +742,10 @@ include __DIR__ . '/../includes/header.php';
         const hiddenPhoto = document.getElementById("photoDataStep3");
         if (existingPhoto) {
             if (prev) {
-                prev.src = existingPhoto;
+                const photoSrc = (typeof window.resolvePhotoUrl === 'function')
+                    ? window.resolvePhotoUrl(existingPhoto)
+                    : (existingPhoto.startsWith("http") || existingPhoto.startsWith("data:") || existingPhoto.startsWith("/") ? existingPhoto : "<?php echo BASE_URL; ?>/" + existingPhoto.replace(/^\/+/, ""));
+                prev.src = photoSrc;
                 prev.style.display = "block";
             }
             if (ph) ph.style.display = "none";

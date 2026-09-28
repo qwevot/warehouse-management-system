@@ -76,6 +76,12 @@ try {
             $st = $pdo->prepare($sql);
             $st->execute($params);
             $items = $st->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($items as &$item) {
+                if (!empty($item['photo'])) {
+                    $item['photo'] = BASE_URL . '/' . ltrim($item['photo'], '/');
+                }
+            }
+            unset($item);
             json_ok(['items' => $items]);
             break;
 
@@ -102,6 +108,12 @@ try {
             $st = $pdo->prepare($sql);
             $st->execute($params);
             $items = $st->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($items as &$item) {
+                if (!empty($item['photo'])) {
+                    $item['photo'] = BASE_URL . '/' . ltrim($item['photo'], '/');
+                }
+            }
+            unset($item);
             json_ok(['items' => $items]);
             break;
 
@@ -123,6 +135,12 @@ try {
             ");
             $stUnits->execute([$term, $term, $term]);
             $units = $stUnits->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($units as &$u) {
+                if (!empty($u['photo'])) {
+                    $u['photo'] = BASE_URL . '/' . ltrim($u['photo'], '/');
+                }
+            }
+            unset($u);
 
             // 2. Lots matching name/brand/barcode
             $stLots = $pdo->prepare("
@@ -142,6 +160,12 @@ try {
             ");
             $stLots->execute([$term, $term, $term]);
             $lots = $stLots->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($lots as &$l) {
+                if (!empty($l['photo'])) {
+                    $l['photo'] = BASE_URL . '/' . ltrim($l['photo'], '/');
+                }
+            }
+            unset($l);
 
             json_ok(['units' => $units, 'lots' => $lots]);
             break;
@@ -155,17 +179,25 @@ try {
             if (!$item) {
                 json_fail('Item not found.');
             }
+            $qty = (int)($item['quantity'] ?? 1);
+            if (!empty($item['barcode'])) {
+                $stCount = $pdo->prepare("SELECT COUNT(*) FROM inventory_units WHERE master_item_id = ? AND barcode = ? AND deleted_at IS NULL AND status = 'available' AND (deployment_site = 'In Warehouse' OR deployment_site = '' OR deployment_site IS NULL)");
+                $stCount->execute([(int)$item['master_item_id'], $item['barcode']]);
+                $cnt = (int)$stCount->fetchColumn();
+                if ($cnt > 0) $qty = $cnt;
+            }
             json_ok(['item' => [
-                'id'       => (int)$item['id'],
-                'name'     => $item['name'],
-                'brand'    => $item['brand'] ?? '',
-                'serial'   => $item['serial'] ?? '',
-                'quantity' => (int)($item['quantity'] ?? 1),
-                'location' => $item['resolved_location'] ?? $item['location'] ?? '',
-                'barcode'  => $item['barcode'] ?? '',
-                'qr'       => $item['qr'] ?? '',
-                'status'   => $item['status'] ?? 'available',
-                'photo'    => $item['photo'] ? BASE_URL . '/' . $item['photo'] : '',
+                'id'             => (int)$item['id'],
+                'name'           => $item['name'],
+                'brand'          => $item['brand'] ?? '',
+                'serial'         => $item['serial'] ?? '',
+                'quantity'       => $qty,
+                'batch_quantity' => $qty,
+                'location'       => $item['resolved_location'] ?? $item['location'] ?? '',
+                'barcode'        => $item['barcode'] ?? '',
+                'qr'             => $item['qr'] ?? '',
+                'status'         => $item['status'] ?? 'available',
+                'photo'          => $item['photo'] ? BASE_URL . '/' . $item['photo'] : '',
             ]]);
             break;
 
