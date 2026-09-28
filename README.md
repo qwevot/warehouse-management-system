@@ -4,16 +4,16 @@ Sistem Informasi Manajemen Pergudangan & Pelacakan Aset Ter-serialisasi (*Serial
 
 ---
 
-## 📋 Prasyarat Sistem (System Requirements)
+## System Requirements
 
 - **Web Server & Database**: [XAMPP](https://www.apachefriends.org/) (Apache + MySQL / MariaDB)
-- **PHP Version**: PHP 8.0 atau lebih tinggi
-- **Ekstensi PHP**: `pdo_mysql`, `session`, `gd` (opsional untuk pemrosesan gambar)
+- **PHP Version**: PHP 8.0 or higher
+- **PHP Extension**: `pdo_mysql`, `session`, `gd` (opsional untuk pemrosesan gambar)
 - **Browser Modern**: Google Chrome, Microsoft Edge, atau Mozilla Firefox (dengan izin kamera untuk fitur scan barcode/QR).
 
 ---
 
-## 🚀 Panduan Instalasi & Menjalankan Aplikasi
+## Installation Steps
 
 Ikuti langkah-langkah berikut untuk menjalankan aplikasi di lingkungan lokal:
 
@@ -50,11 +50,11 @@ define('BASE_URL', '/inventory');
 
 ### 5. Buka Aplikasi
 Akses aplikasi melalui browser:
-👉 **[http://localhost/inventory](http://localhost/inventory)**
+**[http://localhost/inventory](http://localhost/inventory)**
 
 ---
 
-## 👥 Akun Pengguna & Hak Akses (User Credentials)
+## Akun Pengguna & Hak Akses (User Credentials)
 
 Aplikasi memiliki matriks peran (*Role-Based Access Control*):
 
@@ -69,7 +69,7 @@ Aplikasi memiliki matriks peran (*Role-Based Access Control*):
 
 ---
 
-## 📁 Struktur Direktori
+## Struktur Direktori
 
 ```text
 inventory/
@@ -89,7 +89,7 @@ inventory/
 
 ---
 
-## ✨ Fitur-Fitur Utama
+## Fitur-Fitur Utama
 
 1. **Dual Identification**:
    - **Lot Barcode (EAN-13)** untuk identifikasi batch/kelompok barang yang seragam.
