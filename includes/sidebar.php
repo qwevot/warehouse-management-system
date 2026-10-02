@@ -43,6 +43,11 @@ if ($role === 'customer') {
 }
 ?>
 <aside class="sidebar">
+    <div class="sidebar-brand">
+            <img src="<?php echo BASE_URL; ?>/img/NEC-Logo.png" alt="NEC EDMS" class="sidebar-brand-logo">
+            <span class="sidebar-brand-subtitle">Warehouse Management System</span>
+    </div>
+
     <div class="sidebar-content">
         <a href="<?php echo BASE_URL; ?>/pages/dashboard.php" class="nav-item <?php echo $activeNav === 'dashboard' ? 'active' : ''; ?> dashboard-link">
             <div class="nav-icon"><?php echo render_icon('dashboard'); ?></div>
@@ -70,7 +75,7 @@ if ($role === 'customer') {
     </div>
 
     <div class="sidebar-version">
-        <span>v<?php echo defined('APP_VERSION') ? APP_VERSION : '1.0.0'; ?></span>
+        <span>v<?php echo defined('APP_VERSION') ? APP_VERSION : '1.0.1'; ?></span>
         <span class="sidebar-version-sep">&bull;</span>
         <span id="sidebarServerClock" class="sidebar-server-clock" data-server-ts="<?php echo time(); ?>" title="Server Time (Asia/Manila)">
             <?php echo date('H:i:s'); ?>

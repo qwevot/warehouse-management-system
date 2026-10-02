@@ -15,13 +15,16 @@ $initials = strtoupper(($words[0][0] ?? 'U') . ($words[1][0] ?? ''));
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content">
     <title><?php echo e($pageTitle); ?></title>
     <meta name="csrf-token" content="<?php echo e(csrf_token()); ?>">
     <link rel="icon" type="image/svg+xml" href="<?php echo BASE_URL; ?>/favicon.svg">
     <link rel="stylesheet" href="<?php echo BASE_URL; ?>/css/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" onerror="this.href='<?php echo BASE_URL; ?>/css/katex.min.css'">
     <script>
         window.BASE_URL = <?php echo json_encode(BASE_URL); ?>;
+        window.PAGE_TITLE = <?php echo json_encode($pageTitle ?? ''); ?>;
+        window.ACTIVE_NAV = <?php echo json_encode($activeNav ?? ''); ?>;
     </script>
 </head>
 <body>

@@ -12,6 +12,6 @@ define('UPLOAD_DIR', __DIR__ . '/../uploads/');
 define('UPLOAD_URL', 'uploads/');
 
 define('BASE_URL', '/Inventory');
-define('APP_VERSION', '1.0.0');
+define('APP_VERSION', '1.1.0');
 
 date_default_timezone_set('Asia/Manila');

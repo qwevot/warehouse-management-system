@@ -1,7 +1,5 @@
 # Warehouse Management System (WMS)
 
-Sistem Informasi Manajemen Pergudangan & Pelacakan Aset Ter-serialisasi (*Serialized Asset Tracking & Warehouse Management System*).
-
 ---
 
 ## System Requirements
@@ -14,8 +12,6 @@ Sistem Informasi Manajemen Pergudangan & Pelacakan Aset Ter-serialisasi (*Serial
 ---
 
 ## Installation Steps
-
-Ikuti langkah-langkah berikut untuk menjalankan aplikasi di lingkungan lokal:
 
 ### 1. Pindahkan Folder Proyek
 Ekstrak atau pindahkan folder `inventory` ke dalam direktori `htdocs` instalasi XAMPP Anda:
@@ -86,22 +82,3 @@ inventory/
 ├── inventory_system.sql      # Dump skema & data database
 └── README.md                 # Dokumentasi ini
 ```
-
----
-
-## Fitur-Fitur Utama
-
-1. **Dual Identification**:
-   - **Lot Barcode (EAN-13)** untuk identifikasi batch/kelompok barang yang seragam.
-   - **Serial Number & QR Code** untuk pelacakan individual unit aset secara presisi.
-2. **Pergerakan Stok (Movements)**:
-   - **Inbound**: 3-step wizard penerimaan barang (New Lot / Add Existing), label printing, dan penempatan rak.
-   - **Outbound**: Pengeluaran unit terpilih dengan update status real-time (*In Transit*).
-   - **Transfers**: Perpindahan unit/lot antar-rak gudang secara terdokumentasi.
-3. **Manajemen Lot Lanjutan**:
-   - **Split Lot**: Memecah satu lot menjadi $\ge 2$ lot baru dengan barcode terpisah.
-   - **Merge Lot**: Menggabungkan beberapa lot sejenis ke barcode baru atau barcode yang dipilih.
-4. **Master & Inventory Bin**:
-   - Sistem *soft-delete* berjenjang (Bin) dengan kemampuan pemulihan (*restore*) atau penghapusan permanen.
-5. **Universal Table Engine**:
-   - Pencarian instan, filter kolom kustom, pemilih jumlah baris, paginasi, serta ekspor & impor massal (.csv / .xlsx).
